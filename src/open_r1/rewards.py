@@ -53,7 +53,10 @@ def request_auto(payload, target_path=""):
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as ex:
-        logger.info(str(ex))
+        # logger.info(str(ex))
+        return None
+    except requests.exceptions.ReadTimeout as ex:
+        # logger.info(str(ex))
         return None
 
 
@@ -88,7 +91,7 @@ def reward_remote_is_loop_invariant_format(completions, **kwargs):
 def reward_remote_check_has_post_condition(completions, **kwargs):
     func = lambda x: request_auto({"source_code": x}, target_path="check_has_post_condition")
     completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
-    print(completions, "completion_contents...........", completion_contents)
+    # print(completions, "completion_contents...........", completion_contents)
     with ThreadPoolExecutor() as executor:
         completion_contents = list(executor.map(func, completion_contents))
     completion_contents = [float(x["has_post_condition"]) if x is not None else -1 for x in completion_contents]

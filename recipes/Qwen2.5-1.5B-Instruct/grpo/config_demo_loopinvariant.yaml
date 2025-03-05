@@ -30,7 +30,7 @@ lr_scheduler_type: cosine
 max_prompt_length: 512
 max_completion_length: 1024
 max_steps: -1
-num_generations: 16
+num_generations: 12
 num_train_epochs: 1
 output_dir: data/Qwen2.5-1.5B-Open-R1-GRPO
 overwrite_output_dir: true
@@ -38,20 +38,19 @@ per_device_eval_batch_size: 4
 per_device_train_batch_size: 4
 push_to_hub: true
 report_to:
-- tensorbard
+- tensorboard
 reward_funcs:
 - format
 - tag_count
 - code_format
 - reasoning_steps
-- reward_remote_check_syntax,
-- reward_remote_check_is_loop,
-- reward_remote_is_loop_invariant_format,
-- reward_remote_check_has_post_condition,
-- reward_remote_check_is_cheating,
-- reward_remote_verify,
+- reward_remote_check_syntax
+- reward_remote_check_is_loop
+- reward_remote_is_loop_invariant_format
+- reward_remote_check_has_post_condition
+- reward_remote_check_is_cheating
+- reward_remote_verify
 reward_weights:
-- 1.0
 - 1.0
 - 1.0
 - 1.0

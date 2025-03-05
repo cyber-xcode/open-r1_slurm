@@ -160,7 +160,10 @@ def main(script_args, training_args, model_args):
         init_wandb_training(training_args)
 
     # Load the dataset
-    dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
+    if script_args.dataset_name.endswith(".jsonl"):
+        dataset = load_dataset("json", data_files=script_args.dataset_name )
+    else:
+        dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
 
     ################
     # Load tokenizer

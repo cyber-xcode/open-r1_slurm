@@ -10,6 +10,7 @@ from math_verify import LatexExtractionConfig, parse, verify
 
 from .utils import is_e2b_available
 
+import random
 
 import json
 import math
@@ -48,8 +49,8 @@ def find_code_blocks(completion: str) -> str:
 
 def request_auto(payload, target_path=""):
     url = os.path.join(BASE_URL, target_path)
-    response = requests.post(url, json=payload, timeout=10)
     try:
+        response = requests.post(url, json=payload, timeout=10+2)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as ex:
@@ -60,13 +61,14 @@ def request_auto(payload, target_path=""):
         return None
 
 
+
 def reward_remote_check_syntax(completions, **kwargs):
     func = lambda x: request_auto({"source_code": x}, target_path="check_syntax")
     completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
     with ThreadPoolExecutor() as executor:
         # Using executor.map preserves the order of completion_contents
         completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["check_syntax"]) if x is not None else -1 for x in completion_contents]
+    completion_contents = [float(x["check_syntax"]) if x is not None else 0.5 for x in completion_contents]
     return completion_contents
 
 
@@ -75,7 +77,7 @@ def reward_remote_check_is_loop(completions, **kwargs):
     completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
     with ThreadPoolExecutor() as executor:
         completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["check_is_loop"]) if x is not None else -1 for x in completion_contents]
+    completion_contents = [float(x["check_is_loop"]) if x is not None else 0.5 for x in completion_contents]
     return completion_contents
 
 
@@ -84,7 +86,7 @@ def reward_remote_is_loop_invariant_format(completions, **kwargs):
     completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
     with ThreadPoolExecutor() as executor:
         completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["is_loop_invariant_format"]) if x is not None else -1 for x in completion_contents]
+    completion_contents = [float(x["is_loop_invariant_format"]) if x is not None else 0.5 for x in completion_contents]
     return completion_contents
 
 
@@ -94,7 +96,7 @@ def reward_remote_check_has_post_condition(completions, **kwargs):
     # print(completions, "completion_contents...........", completion_contents)
     with ThreadPoolExecutor() as executor:
         completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["has_post_condition"]) if x is not None else -1 for x in completion_contents]
+    completion_contents = [float(x["has_post_condition"]) if x is not None else 0.5 for x in completion_contents]
     return completion_contents
 
 
@@ -103,7 +105,9 @@ def reward_remote_check_is_cheating(completions, **kwargs):
     completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
     with ThreadPoolExecutor() as executor:
         completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["check_is_cheating"]) if x is not None else -1 for x in completion_contents]
+    completion_contents = [float(x["check_is_cheating"]) if x is not None else 0.5 for x in completion_contents]
+    completion_contents = [ 1-x  for x in completion_contents]
+
     return completion_contents
 
 
@@ -111,7 +115,8 @@ def reward_remote_verify(completions, **kwargs):
     def rewrite_content(source_code):
         url = f"{BASE_URL}/rewrite"
         data = {'source_code': source_code}
-        return request_auto(payload=data, target_path="rewrite")
+        d= request_auto(payload=data, target_path="rewrite")
+        return d 
     
     def lemur_verifier_with_prop(source_code, property="unreach-call"):
         assert property in ["unreach-call", "termination"]

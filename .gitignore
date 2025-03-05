@@ -1,3 +1,8 @@
+.ptp-sync-folder
+.pydevproject
+.project
+.settings/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -178,3 +183,4 @@ eval_results/
 results/
 
 .vscode/
+/.ptp-sync/

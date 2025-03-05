@@ -26,8 +26,8 @@ from transformers.trainer_utils import get_last_checkpoint
 
 from open_r1.configs import GRPOConfig
 from open_r1.rewards import (
-    accuracy_reward,
-    code_reward,
+    # accuracy_reward,
+    # code_reward,
     format_reward,
     get_code_format_reward,
     get_cosine_scaled_reward,
@@ -36,6 +36,17 @@ from open_r1.rewards import (
     reasoning_steps_reward,
     tag_count_reward,
 )
+
+from open_r1.rewards import (
+    reward_remote_check_syntax,
+    reward_remote_check_is_loop,
+    reward_remote_is_loop_invariant_format,
+    reward_remote_check_has_post_condition,
+    reward_remote_check_is_cheating,
+    reward_remote_verify,
+)
+
+
 from open_r1.utils import get_tokenizer
 from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
@@ -68,7 +79,7 @@ class GRPOScriptArguments(ScriptArguments):
     """
 
     reward_funcs: list[str] = field(
-        default_factory=lambda: ["accuracy", "format", "tag_count"],
+        default_factory=lambda: [ "format", "tag_count"],
         metadata={
             "help": "List of reward functions. Possible values: 'accuracy', 'format', 'format_deepseek', 'reasoning_steps', 'cosine', 'repetition_penalty', 'length', tag_count', 'code', 'code_format'"
         },
@@ -102,7 +113,7 @@ class GRPOScriptArguments(ScriptArguments):
         metadata={"help": "Maximum (negative) penalty for for repetition penalty reward"},
     )
     code_language: str = field(
-        default="python",
+        default="c",
         metadata={
             "help": "Language for code format reward. Based on E2B supported languages https://e2b.dev/docs/code-interpreting/supported-languages",
             "choices": ["python", "javascript", "r", "java", "bash"],
@@ -158,7 +169,14 @@ def main(script_args, training_args, model_args):
 
     # Get reward functions
     REWARD_FUNCS_REGISTRY = {
-        "accuracy": accuracy_reward,
+        "reward_remote_check_syntax": reward_remote_check_syntax,
+        "reward_remote_check_is_loop": reward_remote_check_is_loop,
+        "reward_remote_is_loop_invariant_format": reward_remote_is_loop_invariant_format,
+        "reward_remote_check_has_post_condition": reward_remote_check_has_post_condition,
+        "reward_remote_check_is_cheating": reward_remote_check_is_cheating,
+        "reward_remote_verify": reward_remote_verify,
+
+    
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,
         "cosine": get_cosine_scaled_reward(
@@ -173,7 +191,6 @@ def main(script_args, training_args, model_args):
             max_penalty=script_args.repetition_max_penalty,
         ),
         "length": len_reward,
-        "code": code_reward,
         "code_format": get_code_format_reward(language=script_args.code_language),
         "tag_count": tag_count_reward,
     }

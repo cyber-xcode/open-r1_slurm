@@ -11,11 +11,135 @@ from math_verify import LatexExtractionConfig, parse, verify
 from .utils import is_e2b_available
 
 
+import json
+import math
+import re
+from typing import Dict
+import os
+import requests
+import backoff
+import logging
+from concurrent.futures import ThreadPoolExecutor
+import re 
+
+logger = logging.getLogger(__file__)
+BASE_URL = "http://127.0.0.1:5000"
+
+
+
 if is_e2b_available():
     from dotenv import load_dotenv
     from e2b_code_interpreter import Sandbox
 
     load_dotenv()
+
+
+def find_code_blocks(completion: str) -> str:
+    # Updated pattern to match any language (optional language after ``` and before \n)
+    pattern = re.compile(r"```[a-zA-Z+]*\n(.*?)```", re.DOTALL | re.MULTILINE | re.IGNORECASE)
+    pattern_backup = re.compile(r"```(.*?)```", re.DOTALL | re.MULTILINE | re.IGNORECASE)
+    matches = pattern.findall(completion)
+    if len(matches) <= 0:
+        matches = pattern_backup.findall(completion)
+    extracted_answer = matches[-1] if len(matches) >= 1 else ""
+    return extracted_answer
+
+
+
+def request_auto(payload, target_path=""):
+    url = os.path.join(BASE_URL, target_path)
+    response = requests.post(url, json=payload, timeout=10)
+    try:
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as ex:
+        logger.info(str(ex))
+        return None
+
+
+def reward_remote_check_syntax(completions, **kwargs):
+    func = lambda x: request_auto({"source_code": x}, target_path="check_syntax")
+    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+    with ThreadPoolExecutor() as executor:
+        # Using executor.map preserves the order of completion_contents
+        completion_contents = list(executor.map(func, completion_contents))
+    completion_contents = [float(x["check_syntax"]) if x is not None else -1 for x in completion_contents]
+    return completion_contents
+
+
+def reward_remote_check_is_loop(completions, **kwargs):
+    func = lambda x: request_auto({"source_code": x}, target_path="check_is_loop")
+    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+    with ThreadPoolExecutor() as executor:
+        completion_contents = list(executor.map(func, completion_contents))
+    completion_contents = [float(x["check_is_loop"]) if x is not None else -1 for x in completion_contents]
+    return completion_contents
+
+
+def reward_remote_is_loop_invariant_format(completions, **kwargs):
+    func = lambda x: request_auto({"source_code": x}, target_path="is_loop_invariant_format")
+    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+    with ThreadPoolExecutor() as executor:
+        completion_contents = list(executor.map(func, completion_contents))
+    completion_contents = [float(x["is_loop_invariant_format"]) if x is not None else -1 for x in completion_contents]
+    return completion_contents
+
+
+def reward_remote_check_has_post_condition(completions, **kwargs):
+    func = lambda x: request_auto({"source_code": x}, target_path="check_has_post_condition")
+    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+    print(completions, "completion_contents...........", completion_contents)
+    with ThreadPoolExecutor() as executor:
+        completion_contents = list(executor.map(func, completion_contents))
+    completion_contents = [float(x["has_post_condition"]) if x is not None else -1 for x in completion_contents]
+    return completion_contents
+
+
+def reward_remote_check_is_cheating(completions, **kwargs):
+    func = lambda x: request_auto({"source_code": x}, target_path="check_is_cheating")
+    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+    with ThreadPoolExecutor() as executor:
+        completion_contents = list(executor.map(func, completion_contents))
+    completion_contents = [float(x["check_is_cheating"]) if x is not None else -1 for x in completion_contents]
+    return completion_contents
+
+
+def reward_remote_verify(completions, **kwargs):
+    def rewrite_content(source_code):
+        url = f"{BASE_URL}/rewrite"
+        data = {'source_code': source_code}
+        return request_auto(payload=data, target_path="rewrite")
+    
+    def lemur_verifier_with_prop(source_code, property="unreach-call"):
+        assert property in ["unreach-call", "termination"]
+        data = {'source_code': source_code, "property": property}
+        return request_auto(payload=data, target_path="lemur_verifier_with_prop")
+    
+    completion_contents = []
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for completion in completions:
+            source_code = completion[0]["content"]
+            source_code = find_code_blocks(source_code)
+            future = executor.submit(rewrite_content, source_code)
+            futures.append((future, source_code))
+        
+        for future, source_code in futures:
+            rewrite_result = future.result()
+            new_content = rewrite_result.get('new_code', source_code)
+            future_lemur = executor.submit(lemur_verifier_with_prop, new_content, property=kwargs.get("property", "unreach-call"))
+            lemur_verifier_result_rewrite = future_lemur.result()
+            status = lemur_verifier_result_rewrite["status"]
+            if status == 1:
+                flg = 1
+            elif status == 2:
+                flg = 0
+            elif status == 3:
+                flg = 0.2  # unknown error, less trust
+            else:
+                flg = 0.5  # timeout
+            completion_contents.append(float(flg))
+    return completion_contents
 
 
 def accuracy_reward(completions, solution, **kwargs):
@@ -316,77 +440,77 @@ def extract_code(completion: str) -> str:
     return extracted_answer
 
 
-def code_reward(completions, **kwargs) -> list[float]:
-    """Reward function that evaluates code snippets using the E2B code interpreter.
+# def code_reward(completions, **kwargs) -> list[float]:
+#     """Reward function that evaluates code snippets using the E2B code interpreter.
+#
+#     Assumes the dataset contains a `verification_info` column with test cases.
+#     """
+#     if not is_e2b_available():
+#         raise ImportError(
+#             "E2B is not available and required for this reward function. Please install E2B with "
+#             "`pip install e2b-code-interpreter` and add an API key to a `.env` file."
+#         )
+#
+#     rewards = []
+#     # TODO: add support for other languages in E2B: https://e2b.dev/docs/code-interpreting/supported-languages
+#     try:
+#         """Returns a reward function that evaluates code snippets in a sandbox."""
+#         evaluation_script_template = """
+#         import subprocess
+#         import json
+#
+#         def evaluate_code(code, test_cases):
+#             passed = 0
+#             total = len(test_cases)
+#             exec_timeout = 5
+#
+#             for case in test_cases:
+#                 process = subprocess.run(
+#                     ["python3", "-c", code],
+#                     input=case["input"],
+#                     text=True,
+#                     capture_output=True,
+#                     timeout=exec_timeout
+#                 )
+#
+#                 if process.returncode != 0:  # Error in execution
+#                     continue
+#
+#                 output = process.stdout.strip()
+#                 if output.strip() == case["output"].strip():
+#                     passed += 1
+#
+#             success_rate = (passed / total)
+#             return success_rate
+#
+#         code_snippet = {code}
+#         test_cases = json.loads({test_cases})
+#
+#         evaluate_code(code_snippet, test_cases)
+#         """
+#         code_snippets = [extract_code(completion[-1]["content"]) for completion in completions]
+#         verification_info = kwargs["verification_info"]
+#         scripts = [
+#             evaluation_script_template.format(
+#                 code=json.dumps(code), test_cases=json.dumps(json.dumps(info["test_cases"]))
+#             )
+#             for code, info in zip(code_snippets, verification_info)
+#         ]
+#         with Sandbox(timeout=30, request_timeout=3) as sbx:
+#             for script in scripts:
+#                 execution = sbx.run_code(script, language=verification_info["language"])
+#                 try:
+#                     output = float(execution.text)
+#                 except (TypeError, ValueError):
+#                     output = 0.0
+#                 rewards.append(output)
+#     except Exception as e:
+#         print(f"Error from E2B executor: {e}")
+#         rewards = [0.0] * len(completions)
+#     return rewards
 
-    Assumes the dataset contains a `verification_info` column with test cases.
-    """
-    if not is_e2b_available():
-        raise ImportError(
-            "E2B is not available and required for this reward function. Please install E2B with "
-            "`pip install e2b-code-interpreter` and add an API key to a `.env` file."
-        )
 
-    rewards = []
-    # TODO: add support for other languages in E2B: https://e2b.dev/docs/code-interpreting/supported-languages
-    try:
-        """Returns a reward function that evaluates code snippets in a sandbox."""
-        evaluation_script_template = """
-        import subprocess
-        import json
-
-        def evaluate_code(code, test_cases):
-            passed = 0
-            total = len(test_cases)
-            exec_timeout = 5
-
-            for case in test_cases:
-                process = subprocess.run(
-                    ["python3", "-c", code],
-                    input=case["input"],
-                    text=True,
-                    capture_output=True,
-                    timeout=exec_timeout
-                )
-
-                if process.returncode != 0:  # Error in execution
-                    continue
-
-                output = process.stdout.strip()
-                if output.strip() == case["output"].strip():
-                    passed += 1
-
-            success_rate = (passed / total)
-            return success_rate
-
-        code_snippet = {code}
-        test_cases = json.loads({test_cases})
-
-        evaluate_code(code_snippet, test_cases)
-        """
-        code_snippets = [extract_code(completion[-1]["content"]) for completion in completions]
-        verification_info = kwargs["verification_info"]
-        scripts = [
-            evaluation_script_template.format(
-                code=json.dumps(code), test_cases=json.dumps(json.dumps(info["test_cases"]))
-            )
-            for code, info in zip(code_snippets, verification_info)
-        ]
-        with Sandbox(timeout=30, request_timeout=3) as sbx:
-            for script in scripts:
-                execution = sbx.run_code(script, language=verification_info["language"])
-                try:
-                    output = float(execution.text)
-                except (TypeError, ValueError):
-                    output = 0.0
-                rewards.append(output)
-    except Exception as e:
-        print(f"Error from E2B executor: {e}")
-        rewards = [0.0] * len(completions)
-    return rewards
-
-
-def get_code_format_reward(language: str = "python"):
+def get_code_format_reward(language: str = "c"):
     """Format reward function specifically for code responses.
 
     Args:

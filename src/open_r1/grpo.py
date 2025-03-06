@@ -30,9 +30,9 @@ from open_r1.rewards import (
     # code_reward,
     format_reward,
     get_code_format_reward,
-    get_cosine_scaled_reward,
+    # get_cosine_scaled_reward,
     get_repetition_penalty_reward,
-    len_reward,
+    # len_reward,
     reasoning_steps_reward,
     tag_count_reward,
 )
@@ -193,18 +193,18 @@ def main(script_args, training_args, model_args):
     
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,
-        "cosine": get_cosine_scaled_reward(
-            min_value_wrong=script_args.cosine_min_value_wrong,
-            max_value_wrong=script_args.cosine_max_value_wrong,
-            min_value_correct=script_args.cosine_min_value_correct,
-            max_value_correct=script_args.cosine_max_value_correct,
-            max_len=script_args.cosine_max_len,
-        ),
+        # "cosine": get_cosine_scaled_reward(
+        #     min_value_wrong=script_args.cosine_min_value_wrong,
+        #     max_value_wrong=script_args.cosine_max_value_wrong,
+        #     min_value_correct=script_args.cosine_min_value_correct,
+        #     max_value_correct=script_args.cosine_max_value_correct,
+        #     max_len=script_args.cosine_max_len,
+        # ),
         "repetition_penalty": get_repetition_penalty_reward(
             ngram_size=script_args.repetition_n_grams,
             max_penalty=script_args.repetition_max_penalty,
         ),
-        "length": len_reward,
+        # "length": len_reward,
         "code_format": get_code_format_reward(),
         "tag_count": tag_count_reward,
     }

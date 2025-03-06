@@ -309,6 +309,8 @@ def reward_asserty_p_is_cheating(completions, **kwargs):
         completion_contents = list(executor.map(func, new_completions))
     completion_contents = [float(x["p_is_cheating"]) if x is not None else 0 for x in completion_contents]
 
+    completion_contents = [ 1-x  for x in completion_contents]
+
     return completion_contents
 
 

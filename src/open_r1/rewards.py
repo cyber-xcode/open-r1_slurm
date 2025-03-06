@@ -50,7 +50,7 @@ def find_code_blocks(completion: str) -> str:
 def request_auto(payload, target_path=""):
     url = os.path.join(BASE_URL, target_path)
     try:
-        response = requests.post(url, json=payload, timeout=10+2)
+        response = requests.post(url, json=payload, timeout=30 )
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as ex:

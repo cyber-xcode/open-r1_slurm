@@ -296,12 +296,19 @@ def reward_asserty_p_check_assert_syntax(completions, **kwargs):
 
 
 def reward_asserty_p_is_cheating(completions, **kwargs):
-    func = lambda x: request_auto({"source_code": x}, target_path="p_is_cheating")
-    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+    # assert "source_code" in  kwargs 
+    raw_source_code = kwargs.get("source_code",[""]*len(completions) )
+    
+    assert_snippets = [find_code_blocks(completion[0]["content"]) for completion in completions]
+
+    new_completions = list( zip(raw_source_code, assert_snippets ) )
+
+    func = lambda x: request_auto({"source_code": x[0], "assertation":x[-1] } , target_path="p_is_cheating")
+
     with ThreadPoolExecutor() as executor:
-        completion_contents = list(executor.map(func, completion_contents))
+        completion_contents = list(executor.map(func, new_completions))
     completion_contents = [float(x["p_is_cheating"]) if x is not None else 0 for x in completion_contents]
-    completion_contents = [ 1-x  for x in completion_contents]
+
     return completion_contents
 
 
@@ -310,20 +317,41 @@ def reward_asserty_verify(completions, **kwargs):
     assert "source_code" in  kwargs 
     
     def rewrite_content(source_code,assertation ):
-        data = {'source_code': source_code, "assertation":assertation }
+        if "assert" not in assertation.lower():
+            return {"new_code":None}
+        
+        data = {'source_code': source_code }
+        ret =  request_auto(payload=data, target_path="rewrite")
+        new_code = ret.get("new_code", None )
+        
+        
+        if new_code is None :
+            return {"new_code":None}
+        
+        data = {'source_code': new_code, "assertation":"\n"+assertation+"\n" }
         inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
-        if inserted_code is None :
-            return {"new_code":None}
         inserted_code = inserted_code.get("p_insert_invariant_from_clangindex",None)
-        if inserted_code is None :
-            return {"new_code":None}
         # print ("during rewrite the raw code is \n",source_code,   "\nthe assert -->", assertation," the compkleted ----->\n", inserted_code)
         
-        data = {'source_code': inserted_code }
-        ret =  request_auto(payload=data, target_path="rewrite")
-        new_code = ret.get("new_code", inserted_code )
+        if inserted_code is None :
+            return {"new_code":None}
         
-        return {"new_code":new_code}
+        return {"new_code":inserted_code}
+    
+    # def rewrite_content(source_code,assertation ):
+    #     data = {'source_code': source_code, "assertation":assertation }
+    #     inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
+    #     inserted_code = inserted_code.get("p_insert_invariant_from_clangindex",None)
+    #     if inserted_code is None :
+    #         return {"new_code":None}
+    #     # print ("during rewrite the raw code is \n",source_code,   "\nthe assert -->", assertation," the compkleted ----->\n", inserted_code)
+    #
+    #     data = {'source_code': inserted_code }
+    #     ret =  request_auto(payload=data, target_path="rewrite")
+    #     new_code = ret.get("new_code", inserted_code )
+    #
+    #     return {"new_code":new_code}
+    
     
     def lemur_verifier_with_prop(source_code, property="unreach-call"):
         # print ("after rewrite the new code is ", "----->\n", source_code)
@@ -374,4 +402,5 @@ def reward_asserty_verify(completions, **kwargs):
                 flg = 0.2  # timeout
             completion_contents.append(float(flg))
     return completion_contents
+
 

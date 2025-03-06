@@ -34,8 +34,8 @@ num_generations: 28
 num_train_epochs: 1
 output_dir: data/Qwen2.5-1.5B-Open-R1-GRPO-onlyassert
 overwrite_output_dir: true
-per_device_eval_batch_size: 4
-per_device_train_batch_size: 4
+per_device_eval_batch_size: 16
+per_device_train_batch_size: 16
 push_to_hub: true
 report_to:
 - tensorboard
@@ -44,7 +44,7 @@ reward_funcs:
 - tag_count
 - code_format
 - reasoning_steps
-- reward_remote_check_is_loop
+- reward_asserty_p_check_assert_syntax
 - reward_asserty_verify
 - reward_asserty_p_is_cheating
 reward_weights:

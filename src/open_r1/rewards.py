@@ -134,18 +134,20 @@ def reward_remote_verify(completions, **kwargs):
         
         for future, source_code in futures:
             rewrite_result = future.result()
-            new_content = rewrite_result.get('new_code', source_code)
-            future_lemur = executor.submit(lemur_verifier_with_prop, new_content, property=kwargs.get("property", "unreach-call"))
-            lemur_verifier_result_rewrite = future_lemur.result()
-            status = lemur_verifier_result_rewrite["status"]
-            if status == 1:
-                flg = 1
-            elif status == 2:
-                flg = 0
-            elif status == 3:
-                flg = 0.2  # unknown error, less trust
-            else:
-                flg = 0.5  # timeout
+            flg = 0 
+            if rewrite_result is not None :
+                new_content = rewrite_result.get('new_code', source_code)
+                future_lemur = executor.submit(lemur_verifier_with_prop, new_content, property=kwargs.get("property", "unreach-call"))
+                lemur_verifier_result_rewrite = future_lemur.result()
+                status = lemur_verifier_result_rewrite["status"]
+                if status == 1:
+                    flg = 1
+                elif status == 2:
+                    flg = 0
+                elif status == 3:
+                    flg = 0.1  # unknown error, less trust
+                else:
+                    flg = 0.2  # timeout
             completion_contents.append(float(flg))
     return completion_contents
 
@@ -488,6 +490,7 @@ def reward_asserty_p_is_cheating(completions, **kwargs):
     with ThreadPoolExecutor() as executor:
         completion_contents = list(executor.map(func, completion_contents))
     completion_contents = [float(x["p_is_cheating"]) if x is not None else 0 for x in completion_contents]
+    completion_contents = [ 1-x  for x in completion_contents]
     return completion_contents
 
 
@@ -498,6 +501,8 @@ def reward_asserty_verify(completions, **kwargs):
     def rewrite_content(source_code,assertation ):
         data = {'source_code': source_code, "assertation":assertation }
         inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
+        if inserted_code is None :
+            return {"new_code":None}
         inserted_code = inserted_code.get("p_insert_invariant_from_clangindex",None)
         if inserted_code is None :
             return {"new_code":None}

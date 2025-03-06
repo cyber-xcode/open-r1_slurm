@@ -44,6 +44,11 @@ from open_r1.rewards import (
     reward_remote_check_has_post_condition,
     reward_remote_check_is_cheating,
     reward_remote_verify,
+    
+    reward_asserty_p_check_assert_syntax,
+    reward_asserty_p_is_cheating,
+    reward_asserty_verify, 
+    
 )
 
 
@@ -179,6 +184,12 @@ def main(script_args, training_args, model_args):
         "reward_remote_check_is_cheating": reward_remote_check_is_cheating,
         "reward_remote_verify": reward_remote_verify,
 
+
+    
+    "reward_asserty_p_check_assert_syntax":reward_asserty_p_check_assert_syntax, 
+    "reward_asserty_p_is_cheating":reward_asserty_p_is_cheating,
+    "reward_asserty_verify":reward_asserty_verify,
+
     
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,
@@ -194,7 +205,7 @@ def main(script_args, training_args, model_args):
             max_penalty=script_args.repetition_max_penalty,
         ),
         "length": len_reward,
-        "code_format": get_code_format_reward(language=script_args.code_language),
+        "code_format": get_code_format_reward(),
         "tag_count": tag_count_reward,
     }
     reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]

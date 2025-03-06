@@ -448,75 +448,6 @@ def extract_code(completion: str) -> str:
     return extracted_answer
 
 
-# def code_reward(completions, **kwargs) -> list[float]:
-#     """Reward function that evaluates code snippets using the E2B code interpreter.
-#
-#     Assumes the dataset contains a `verification_info` column with test cases.
-#     """
-#     if not is_e2b_available():
-#         raise ImportError(
-#             "E2B is not available and required for this reward function. Please install E2B with "
-#             "`pip install e2b-code-interpreter` and add an API key to a `.env` file."
-#         )
-#
-#     rewards = []
-#     # TODO: add support for other languages in E2B: https://e2b.dev/docs/code-interpreting/supported-languages
-#     try:
-#         """Returns a reward function that evaluates code snippets in a sandbox."""
-#         evaluation_script_template = """
-#         import subprocess
-#         import json
-#
-#         def evaluate_code(code, test_cases):
-#             passed = 0
-#             total = len(test_cases)
-#             exec_timeout = 5
-#
-#             for case in test_cases:
-#                 process = subprocess.run(
-#                     ["python3", "-c", code],
-#                     input=case["input"],
-#                     text=True,
-#                     capture_output=True,
-#                     timeout=exec_timeout
-#                 )
-#
-#                 if process.returncode != 0:  # Error in execution
-#                     continue
-#
-#                 output = process.stdout.strip()
-#                 if output.strip() == case["output"].strip():
-#                     passed += 1
-#
-#             success_rate = (passed / total)
-#             return success_rate
-#
-#         code_snippet = {code}
-#         test_cases = json.loads({test_cases})
-#
-#         evaluate_code(code_snippet, test_cases)
-#         """
-#         code_snippets = [extract_code(completion[-1]["content"]) for completion in completions]
-#         verification_info = kwargs["verification_info"]
-#         scripts = [
-#             evaluation_script_template.format(
-#                 code=json.dumps(code), test_cases=json.dumps(json.dumps(info["test_cases"]))
-#             )
-#             for code, info in zip(code_snippets, verification_info)
-#         ]
-#         with Sandbox(timeout=30, request_timeout=3) as sbx:
-#             for script in scripts:
-#                 execution = sbx.run_code(script, language=verification_info["language"])
-#                 try:
-#                     output = float(execution.text)
-#                 except (TypeError, ValueError):
-#                     output = 0.0
-#                 rewards.append(output)
-#     except Exception as e:
-#         print(f"Error from E2B executor: {e}")
-#         rewards = [0.0] * len(completions)
-#     return rewards
-
 
 def get_code_format_reward(language: str = "c"):
     """Format reward function specifically for code responses.
@@ -532,3 +463,99 @@ def get_code_format_reward(language: str = "c"):
         return [1.0 if match else 0.0 for match in matches]
 
     return code_format_reward
+
+
+
+
+
+
+
+
+def reward_asserty_p_check_assert_syntax(completions, **kwargs):
+    func = lambda x: request_auto({"source_code": x}, target_path="p_check_assert_syntax")
+    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+    with ThreadPoolExecutor() as executor:
+        # Using executor.map preserves the order of completion_contents
+        completion_contents = list(executor.map(func, completion_contents))
+    completion_contents = [float(x["p_check_assert_syntax"]) if x is not None else 0 for x in completion_contents]
+    return completion_contents
+
+
+
+def reward_asserty_p_is_cheating(completions, **kwargs):
+    func = lambda x: request_auto({"source_code": x}, target_path="p_is_cheating")
+    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+    with ThreadPoolExecutor() as executor:
+        completion_contents = list(executor.map(func, completion_contents))
+    completion_contents = [float(x["p_is_cheating"]) if x is not None else 0 for x in completion_contents]
+    return completion_contents
+
+
+def reward_asserty_verify(completions, **kwargs):
+
+    assert "source_code" in  kwargs 
+    
+    def rewrite_content(source_code,assertation ):
+        data = {'source_code': source_code, "assertation":assertation }
+        inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
+        inserted_code = inserted_code.get("p_insert_invariant_from_clangindex",None)
+        if inserted_code is None :
+            return {"new_code":None}
+        # print ("during rewrite the raw code is \n",source_code,   "\nthe assert -->", assertation," the compkleted ----->\n", inserted_code)
+        
+        data = {'source_code': inserted_code }
+        ret =  request_auto(payload=data, target_path="rewrite")
+        new_code = ret.get("new_code", inserted_code )
+        
+        return {"new_code":new_code}
+    
+    def lemur_verifier_with_prop(source_code, property="unreach-call"):
+        # print ("after rewrite the new code is ", "----->\n", source_code)
+        assert property in ["unreach-call", "termination"]
+        data = {'source_code': source_code, "property": property}
+        return request_auto(payload=data, target_path="lemur_verifier_with_prop")
+    
+    
+    assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
+    if "source_code" not in kwargs :
+        logger.info("source code is null, current keawrgs == {}".format( list(kwargs ) ) )
+    raw_source_code = kwargs["source_code"]
+    
+    
+    # raw_source_code = [x.decode() for x in raw_source_code ] 
+    # print ("kwargs \n\n\n\n ---->", "----->"*8 , raw_source_code[0].encode() )
+    new_completions = list( zip(raw_source_code, assert_snippets ) )
+    
+    completion_contents = []
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for source_code,assertation in new_completions:
+            # logger.info ("soource code from post {}".format( source_code  ) )
+            # logger.info ("assertation from post {}".format( assertation  ) )
+            
+            # source_code = completion[0]["content"]
+            # source_code = find_code_blocks(source_code)
+            future = executor.submit(rewrite_content, source_code ,assertation )
+            futures.append((future, source_code))
+        
+        for future, source_code in futures:
+            rewrite_result = future.result()
+            new_content = rewrite_result.get('new_code', None)
+            if new_content is not None :
+                future_lemur = executor.submit(lemur_verifier_with_prop, new_content, property=kwargs.get("property", "unreach-call"))
+                lemur_verifier_result_rewrite = future_lemur.result()
+                status = lemur_verifier_result_rewrite["status"]
+            else:
+                status = 2 
+                
+            if status == 1:
+                flg = 1
+            elif status == 2:
+                flg = 0
+            elif status == 3:
+                flg = 0.1  # unknown error, less trust
+            else:
+                flg = 0.2  # timeout
+            completion_contents.append(float(flg))
+    return completion_contents
+

@@ -4,12 +4,14 @@ import pytest
 import unittest
 import os
 import requests
+import time 
 # from reward_functions.remote_rewards import (
 from open_r1.rewards import (
     # request_auto,
     reward_asserty_p_check_assert_syntax , 
     reward_asserty_p_is_cheating , 
     reward_asserty_verify, 
+    reward_asserty_verify_with_esbmc,
     
 )
 
@@ -325,6 +327,39 @@ int main() {
 
 invriant_c_code="assert(sum == (i * (i + 1)) / 2);"
 
+UNSOLVED_CODE_assert = "assert(hi == 2 * mid + lo && mid >= 0);"
+UNSOLVED_CODE = """
+#include <assert.h>
+
+extern void __VERIFIER_assume(int cond);
+extern void assume(int cond);
+
+int main() {
+    //variable declarations
+    int lo, mid, hi;
+    //pre-condition
+    __VERIFIER_assume( mid>0 );
+    __VERIFIER_assume( lo == 0 );
+    __VERIFIER_assume( hi == 2 * mid );
+
+    //loop-body
+    while(mid > 0) {
+        lo = lo + 1;
+        hi = hi - 1;
+        mid = mid - 1;
+    }
+    //post-condition
+    assert(lo == hi);
+}
+"""
+
+@pytest.fixture
+def timer():
+    start = time.time()
+    yield
+    end = time.time()
+    print(f"\nTest took {end - start:.4f} seconds.")
+
 class TestRewardFunctions(unittest.TestCase):
 
     def test_reward_asserty_p_check_assert_syntax_valid_assert(self):
@@ -356,6 +391,36 @@ class TestRewardFunctions(unittest.TestCase):
         source_code = [invriant_raw_c_code]
         result = reward_asserty_verify(completions, source_code=source_code, property="unreach-call")
         self.assertEqual(result, [0.0])
+
+    def test_reward_asserty_verify_with_esbmc(self):
+        start_a = time.time()
+        completions = [[{"content": f"```\n{UNSOLVED_CODE_assert}\n```"}]]
+        source_code = [UNSOLVED_CODE]
+        result = reward_asserty_verify_with_esbmc(completions, source_code=source_code, property="unreach-call")
+        self.assertEqual(result, [1.0])
+        print(f"Block A took {time.time() - start_a:.4f} seconds")
+
+        start_b = time.time()
+        completions = [[{"content": f"```{UNSOLVED_CODE_assert}```"}]]
+        source_code = [UNSOLVED_CODE]
+        result = reward_asserty_verify_with_esbmc(completions, source_code=source_code, property="termination")
+        self.assertEqual(result, [1.0])
+        print(f"Block B took {time.time() - start_b:.4f} seconds")
+        
+        
+        start_c = time.time()
+        completions = [[{"content": f"```c\n assert(sum == (i * (i + 1)) / 3); \n```"}]]
+        source_code = [UNSOLVED_CODE]
+        result = reward_asserty_verify_with_esbmc(completions, source_code=source_code, property="unreach-call")
+        self.assertEqual(result, [0.0])
+        print(f"Block C took {time.time() - start_c:.4f} seconds")
+
+        start_d = time.time()
+        completions = [[{"content": f"```c\n assert(1==1); \n```"}]]
+        source_code = [UNSOLVED_CODE]
+        result = reward_asserty_verify_with_esbmc(completions, source_code=source_code, property="unreach-call")
+        self.assertEqual(result, [0.0])
+        print(f"Block D took {time.time() - start_d:.4f} seconds")
 
 
 if __name__ == "__main__":

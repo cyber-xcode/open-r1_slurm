@@ -50,7 +50,7 @@ from open_r1.rewards import (
     reward_asserty_verify, 
     
     reward_asserty_verify_with_esbmc,
-    
+    reward_asserty_verify_with_z3, 
 )
 
 
@@ -193,6 +193,9 @@ def main(script_args, training_args, model_args):
     "reward_asserty_verify":reward_asserty_verify,
 
 "reward_asserty_verify_with_esbmc":reward_asserty_verify_with_esbmc,
+"reward_asserty_verify_with_z3":reward_asserty_verify_with_z3,
+    
+    
     
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,

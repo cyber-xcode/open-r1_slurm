@@ -49,6 +49,8 @@ from open_r1.rewards import (
     reward_asserty_p_is_cheating,
     reward_asserty_verify, 
     
+    reward_asserty_verify_with_esbmc,
+    
 )
 
 
@@ -190,6 +192,7 @@ def main(script_args, training_args, model_args):
     "reward_asserty_p_is_cheating":reward_asserty_p_is_cheating,
     "reward_asserty_verify":reward_asserty_verify,
 
+"reward_asserty_verify_with_esbmc":reward_asserty_verify_with_esbmc,
     
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,

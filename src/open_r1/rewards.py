@@ -437,7 +437,7 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
         
         return {"new_code":inserted_code}
     
-    def esbmc_verifier_with_k_induction(source_code, property="unreach-call",timeout=3):
+    def esbmc_verifier_with_k_induction(source_code, property="unreach-call",timeout=5):
         # print ("after rewrite the new code is ", "----->\n", source_code)
         assert property in ["unreach-call", "termination"]
         data = {'source_code': source_code, "timeout":timeout }
@@ -467,8 +467,10 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
             if new_content is not None :
                 future_lemur = executor.submit(esbmc_verifier_with_k_induction, new_content, property=kwargs.get("property", "unreach-call"))
                 lemur_verifier_result_rewrite = future_lemur.result()
-                print ("lemur_verifier_result_rewrite", lemur_verifier_result_rewrite )
-                status = lemur_verifier_result_rewrite["status"]
+                if lemur_verifier_result_rewrite is not None:
+                    status = lemur_verifier_result_rewrite["status"]
+                else:
+                    status =2
             else:
                 status = 2 
                 

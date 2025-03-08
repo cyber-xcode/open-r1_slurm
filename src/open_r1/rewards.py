@@ -21,6 +21,9 @@ import requests
 import backoff
 import logging
 from concurrent.futures import ThreadPoolExecutor
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import re 
 
 logger = logging.getLogger(__file__)
@@ -314,86 +317,56 @@ def reward_asserty_p_is_cheating(completions, **kwargs):
     return completion_contents
 
 
-def reward_asserty_verify(completions, **kwargs):
 
-    assert "source_code" in  kwargs 
-    
-    def rewrite_content(source_code,assertation ):
-        if "assert" not in assertation.lower():
-            return {"new_code":None}
-        
-        data = {'source_code': source_code }
-        ret =  request_auto(payload=data, target_path="rewrite")
-        new_code = ret.get("new_code", None )
-        
-        
-        if new_code is None :
-            return {"new_code":None}
-        
-        data = {'source_code': new_code, "assertation":"\n"+assertation+"\n" }
+
+
+def reward_asserty_verify(completions, **kwargs):
+    assert "source_code" in kwargs
+
+    def rewrite_content(source_code, assertion):
+        if "assert" not in assertion.lower():
+            return {"new_code": None}
+
+        data = {'source_code': source_code}
+        ret = request_auto(payload=data, target_path="rewrite")
+        new_code = ret.get("new_code", None)
+
+        if new_code is None:
+            return {"new_code": None}
+
+        data = {'source_code': new_code, "assertation": "\n" + assertion + "\n"}
         inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
-        inserted_code = inserted_code.get("p_insert_invariant_from_clangindex",None)
-        # print ("during rewrite the raw code is \n",source_code,   "\nthe assert -->", assertation," the compkleted ----->\n", inserted_code)
-        
-        if inserted_code is None :
-            return {"new_code":None}
-        
-        return {"new_code":inserted_code}
-    
-    # def rewrite_content(source_code,assertation ):
-    #     data = {'source_code': source_code, "assertation":assertation }
-    #     inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
-    #     inserted_code = inserted_code.get("p_insert_invariant_from_clangindex",None)
-    #     if inserted_code is None :
-    #         return {"new_code":None}
-    #     # print ("during rewrite the raw code is \n",source_code,   "\nthe assert -->", assertation," the compkleted ----->\n", inserted_code)
-    #
-    #     data = {'source_code': inserted_code }
-    #     ret =  request_auto(payload=data, target_path="rewrite")
-    #     new_code = ret.get("new_code", inserted_code )
-    #
-    #     return {"new_code":new_code}
-    
-    
+        inserted_code = inserted_code.get("p_insert_invariant_from_clangindex", None)
+
+        if inserted_code is None:
+            return {"new_code": None}
+
+        return {"new_code": inserted_code}
+
     def lemur_verifier_with_prop(source_code, property="unreach-call"):
-        # print ("after rewrite the new code is ", "----->\n", source_code)
         assert property in ["unreach-call", "termination"]
         data = {'source_code': source_code, "property": property}
         return request_auto(payload=data, target_path="lemur_verifier_with_prop")
-    
-    
+
     assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
-    if "source_code" not in kwargs :
-        logger.info("source code is null, current keawrgs == {}".format( list(kwargs ) ) )
     raw_source_code = kwargs["source_code"]
-    
-    
-    # raw_source_code = [x.decode() for x in raw_source_code ] 
-    # print ("kwargs \n\n\n\n ---->", "----->"*8 , raw_source_code[0].encode() )
-    new_completions = list( zip(raw_source_code, assert_snippets ) )
-    
+    new_completions = list(zip(raw_source_code, assert_snippets))
+
     completion_contents = []
+
     with ThreadPoolExecutor() as executor:
-        futures = []
-        for source_code,assertation in new_completions:
-            # logger.info ("soource code from post {}".format( source_code  ) )
-            # logger.info ("assertation from post {}".format( assertation  ) )
-            
-            # source_code = completion[0]["content"]
-            # source_code = find_code_blocks(source_code)
-            future = executor.submit(rewrite_content, source_code ,assertation )
-            futures.append((future, source_code))
-        
-        for future, source_code in futures:
-            rewrite_result = future.result()
+        # Use executor.map to process new_completions in order
+        rewrite_results = executor.map(lambda x: rewrite_content(x[0], x[1]), new_completions)
+
+        for rewrite_result in rewrite_results:
             new_content = rewrite_result.get('new_code', None)
-            if new_content is not None :
-                future_lemur = executor.submit(lemur_verifier_with_prop, new_content, property=kwargs.get("property", "unreach-call"))
-                lemur_verifier_result_rewrite = future_lemur.result()
+
+            if new_content is not None:
+                lemur_verifier_result_rewrite = lemur_verifier_with_prop(new_content, property=kwargs.get("property", "unreach-call"))
                 status = lemur_verifier_result_rewrite["status"]
             else:
-                status = 2 
-                
+                status = 2
+
             if status == 1:
                 flg = 1
             elif status == 2:
@@ -402,148 +375,106 @@ def reward_asserty_verify(completions, **kwargs):
                 flg = 0.1  # unknown error, less trust
             else:
                 flg = 0.2  # timeout
-            completion_contents.append(float(flg))
-    return completion_contents
 
+            completion_contents.append(float(flg))
+
+    return completion_contents
 
 
 
 def reward_asserty_verify_with_esbmc(completions, **kwargs):
+    assert "source_code" in kwargs
+    assert "idx" in kwargs, list(kwargs)
 
-    assert "source_code" in  kwargs 
-    assert "idx" in  kwargs , list(kwargs)
-    
-    def rewrite_content(source_code,assertation, idx ):
-        if "assert" not in assertation.lower():
-            return {"new_code":None}
-        
-        data = {'source_code': source_code, "idx":idx }
-        ret =  request_auto(payload=data, target_path="rewrite")
-        if ret is None :
-            return {"new_code":None}
-        new_code = ret.get("new_code", None )
-        
-        
-        if new_code is None :
-            return {"new_code":None}
-        
-        data = {'source_code': new_code, "assertation":"\n"+assertation+"\n" }
+    def rewrite_content(source_code, assertion, idx):
+        if "assert" not in assertion.lower():
+            return {"new_code": None}
+
+        data = {'source_code': source_code, "idx": idx}
+        ret = request_auto(payload=data, target_path="rewrite")
+        if ret is None:
+            return {"new_code": None}
+        new_code = ret.get("new_code", None)
+
+        if new_code is None:
+            return {"new_code": None}
+
+        data = {'source_code': new_code, "assertation": "\n" + assertion + "\n"}
         inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
-        inserted_code = inserted_code.get("p_insert_invariant_from_clangindex",None)
-        # print ("during rewrite the raw code is \n",source_code,   "\nthe assert -->", assertation," the compkleted ----->\n", inserted_code)
-        
-        if inserted_code is None :
-            return {"new_code":None}
-        
-        return {"new_code":inserted_code}
-    
-    def esbmc_verifier_with_k_induction(source_code, property="unreach-call",timeout=5):
-        # print ("after rewrite the new code is ", "----->\n", source_code)
+        inserted_code = inserted_code.get("p_insert_invariant_from_clangindex", None)
+
+        if inserted_code is None:
+            return {"new_code": None}
+
+        return {"new_code": inserted_code}
+
+    def esbmc_verifier_with_k_induction(source_code, property="unreach-call", timeout=5):
         assert property in ["unreach-call", "termination"]
-        data = {'source_code': source_code, "timeout":timeout }
-        return request_auto(payload=data, target_path="esbmc_verifier_with_k_induction",timeout=timeout)
-    
-    
+        data = {'source_code': source_code, "timeout": timeout}
+        return request_auto(payload=data, target_path="esbmc_verifier_with_k_induction", timeout=timeout)
+
     assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
-    if "source_code" not in kwargs :
-        logger.info("source code is null, current keawrgs == {}".format( list(kwargs ) ) )
     raw_source_code = kwargs["source_code"]
     raw_idx = kwargs["idx"]
-    
-    
-    new_completions = list( zip(raw_source_code, assert_snippets, raw_idx ) )
-    
-    completion_contents = []
-    with ThreadPoolExecutor() as executor:
-        futures = []
-        for source_code,assertation,idx in new_completions:
 
-            future = executor.submit(rewrite_content, source_code ,assertation, idx )
-            futures.append((future, source_code))
-        
-        for future, source_code in futures:
-            rewrite_result = future.result()
+    new_completions = list(zip(raw_source_code, assert_snippets, raw_idx))
+
+    completion_contents = []
+
+    with ThreadPoolExecutor() as executor:
+        # Use executor.map to process new_completions in order
+        rewrite_results = executor.map(lambda x: rewrite_content(x[0], x[1], x[2]), new_completions)
+
+        for rewrite_result in rewrite_results:
             new_content = rewrite_result.get('new_code', None)
-            if new_content is not None :
-                future_lemur = executor.submit(esbmc_verifier_with_k_induction, new_content, property=kwargs.get("property", "unreach-call"))
-                lemur_verifier_result_rewrite = future_lemur.result()
-                if lemur_verifier_result_rewrite is not None:
-                    status = lemur_verifier_result_rewrite["status"]
-                else:
-                    status =2
+
+            if new_content is not None:
+                esbmc_verifier_result_rewrite = esbmc_verifier_with_k_induction(new_content, property=kwargs.get("property", "unreach-call"))
+                status = esbmc_verifier_result_rewrite["status"] if esbmc_verifier_result_rewrite is not None else 2
             else:
-                status = 2 
-                
+                status = 2
+
             if status == 1:
                 flg = 1
-            else :
+            else:
                 flg = 0
-            # elif status == 3:
-            #     flg = 0.1  # unknown error, less trust
-            # else:
-            #     flg = 0.2  # timeout
+
             completion_contents.append(float(flg))
+
     return completion_contents
 
 
 
-
-
-
-# def reward_asserty_p_check_assert_syntax(completions, **kwargs):
-#     func = lambda x: request_auto({"source_code": x}, target_path="p_check_assert_syntax")
-#     completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
-#     with ThreadPoolExecutor() as executor:
-#         # Using executor.map preserves the order of completion_contents
-#         completion_contents = list(executor.map(func, completion_contents))
-#     completion_contents = [float(x["p_check_assert_syntax"]) if x is not None else 0 for x in completion_contents]
-#     return completion_contents
-
-
-
 def reward_asserty_verify_with_z3(completions, **kwargs):
+    assert "smt_code" in kwargs
 
-    assert "smt_code" in  kwargs 
-    assert "idx" in  kwargs , list(kwargs)
-    
-    def _z3_verify(smt_code,assertation  ):
-        if "assert" not in assertation.lower():
-            return  None 
+    def _z3_verify(smt_code, assertion):
+        if "assert" not in assertion.lower():
+            return None
         
-        data = {'source_code': smt_code,  "assertation":assertation }
-        return request_auto(payload=data, target_path="smt_verify" )
-    
-    
+        data = {'source_code': smt_code, "assertation": assertion}
+        return request_auto(payload=data, target_path="smt_verify")
+
     assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
-
     raw_source_code = kwargs["smt_code"]
-    
-    
-    new_completions = list( zip(raw_source_code, assert_snippets  ) )
 
+    new_completions = list(zip(raw_source_code, assert_snippets))
 
-    x_fail = 0 
-    x_pass = 1 
-    
-    completion_contents = []
-    
+    x_fail = 0
+    x_pass = 1
+
     with ThreadPoolExecutor() as executor:
-        futures = []
-        for smt_code,assertation in new_completions:
+        # Use executor.map to process new_completions in order
+        results = executor.map(lambda x: _z3_verify(x[0], x[1]), new_completions)
 
-            future = executor.submit(_z3_verify, smt_code ,assertation )
-            futures.append((future, source_code))
-        
-        for future, source_code in futures:
-            rewrite_result = future.result()
-            print ("rewrite_result", rewrite_result )
-            if rewrite_result is None :
-                completion_contents.append( x_fail  )
-            elif "smt_verify" not in rewrite_result :
-                completion_contents.append( x_fail  )
+        completion_contents = []
+        for rewrite_result in results:
+            print("rewrite_result", rewrite_result)
+            if rewrite_result is None:
+                completion_contents.append(x_fail)
+            elif "smt_verify" not in rewrite_result:
+                completion_contents.append(x_fail)
             else:
-                completion_contents.append( rewrite_result["smt_verify"]["score"]  )
-            
-                
-    
+                completion_contents.append(rewrite_result["smt_verify"]["score"])
+
     return completion_contents

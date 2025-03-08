@@ -12,6 +12,8 @@ from open_r1.rewards import (
     reward_asserty_p_is_cheating , 
     reward_asserty_verify, 
     reward_asserty_verify_with_esbmc,
+
+    reward_asserty_verify_with_z3,
     
 )
 
@@ -438,6 +440,84 @@ class TestRewardFunctions(unittest.TestCase):
         self.assertEqual(result, [0.0])
         print(f"Block D took {time.time() - start_d:.4f} seconds")
 
+
+
+
+    def test_reward_asserty_verify_with_z3(self):
+        start_a = time.time()
+        completions = [[{"content": f"```\n{UNSOLVED_CODE_assert}\n```"}]]
+        source_code = [UNSOLVED_CODE]
+        result = reward_asserty_verify_with_z3(completions,  smt_code=source_code)
+        self.assertEqual(result, [0.0])
+        print(f"Block A took {time.time() - start_a:.4f} seconds")
+        
+        
+        smt_105 = open("tests/105.c.smt.txt").read() 
+        start_b = time.time()
+        result = "assert((x >= 0) && (x <= n) && (n >= 0));"
+        completions = [[{"content": f"```{result}```"}]]
+        source_code = [smt_105]
+        result = reward_asserty_verify_with_z3(completions, smt_code=source_code, )
+        self.assertEqual(result, [0.0])
+        print(f"Block B took {time.time() - start_b:.4f} seconds")
+        
+
+
+        start_b = time.time()
+        result = "assert((x >= 0) && (x <= n) && (n >= 0));\nassert(((n < 0) && (x == 0)) || ((n >= 0) && (0 <= x && x <= n)));"
+        completions = [[{"content": f"```{result}```"}]]
+        source_code = [smt_105]
+        result = reward_asserty_verify_with_z3(completions, smt_code=source_code, )
+        self.assertEqual(result, [0.5])
+        print(f"Block B took {time.time() - start_b:.4f} seconds")
+
+        
+        result = [
+        "assert(hi == 2 * mid + lo && mid >= 0);", 
+    
+        "assert(hi == 20 * mid + lo  );", 
+        "assert( 1==1  );", 
+        ]    
+        result_str = "\n".join( result )    
+        smt_solved = open("tests/t_solved.c.smt").read() 
+        start_b = time.time()
+        completions = [[{"content": f"```{result_str}```"}]]
+        source_code = [smt_solved]
+        result = reward_asserty_verify_with_z3(completions, smt_code=source_code, )
+        
+        self.assertGreater(result[0],0.3)
+        self.assertLess(result[0],0.4)
+        print(f"Block B took {time.time() - start_b:.4f} seconds")
+        
+        result = [
+        "assert(hi == 2 * mid + lo && mid >= 0);", 
+    
+        "assert(hi == 20 * mid + lo  );", 
+        "assert( 1==1  );", 
+        ]    
+
+        start_b = time.time()
+        completions = [[{"content": f"```{x}```"}] for x in result]
+        source_code = [smt_solved]*len( completions )
+        result = reward_asserty_verify_with_z3(completions, smt_code=source_code, )
+        self.assertEqual(len(result),len(result) )
+        self.assertEqual(result[0], 1.0)
+        self.assertEqual(result[1], 0.0)
+        self.assertEqual(result[2], 0.0)
+        print(f"Block B took {time.time() - start_b:.4f} seconds")
+        
+
+
+
+        start_b = time.time()
+        result = "assert((x >= 0) && (x <= n) && (n >= 0));"
+        completions = [[{"content": f"```{result}```"}]]
+        source_code = [smt_solved]
+        result = reward_asserty_verify_with_z3(completions, smt_code=source_code, )
+        self.assertEqual(result, [0.0])
+        print(f"Block B took {time.time() - start_b:.4f} seconds")
+
+        
 
 if __name__ == "__main__":
     unittest.main()

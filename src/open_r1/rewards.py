@@ -469,12 +469,12 @@ def reward_asserty_verify_with_z3(completions, **kwargs):
 
         completion_contents = []
         for rewrite_result in results:
-            # print("rewrite_result", rewrite_result)
             if rewrite_result is None:
                 completion_contents.append(x_fail)
             elif "smt_verify" not in rewrite_result:
                 completion_contents.append(x_fail)
             else:
+                print("rewrite_result", rewrite_result)
                 completion_contents.append(rewrite_result["smt_verify"]["score"])
 
     return completion_contents

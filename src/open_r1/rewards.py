@@ -485,3 +485,65 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
             completion_contents.append(float(flg))
     return completion_contents
 
+
+
+
+
+
+# def reward_asserty_p_check_assert_syntax(completions, **kwargs):
+#     func = lambda x: request_auto({"source_code": x}, target_path="p_check_assert_syntax")
+#     completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
+#     with ThreadPoolExecutor() as executor:
+#         # Using executor.map preserves the order of completion_contents
+#         completion_contents = list(executor.map(func, completion_contents))
+#     completion_contents = [float(x["p_check_assert_syntax"]) if x is not None else 0 for x in completion_contents]
+#     return completion_contents
+
+
+
+def reward_asserty_verify_with_z3(completions, **kwargs):
+
+    assert "smt_code" in  kwargs 
+    assert "idx" in  kwargs , list(kwargs)
+    
+    def _z3_verify(smt_code,assertation  ):
+        if "assert" not in assertation.lower():
+            return  None 
+        
+        data = {'source_code': smt_code,  "assertation":assertation }
+        return request_auto(payload=data, target_path="smt_verify" )
+    
+    
+    assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
+
+    raw_source_code = kwargs["smt_code"]
+    
+    
+    new_completions = list( zip(raw_source_code, assert_snippets  ) )
+
+
+    x_fail = 0 
+    x_pass = 1 
+    
+    completion_contents = []
+    
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for smt_code,assertation in new_completions:
+
+            future = executor.submit(_z3_verify, smt_code ,assertation )
+            futures.append((future, source_code))
+        
+        for future, source_code in futures:
+            rewrite_result = future.result()
+            print ("rewrite_result", rewrite_result )
+            if rewrite_result is None :
+                completion_contents.append( x_fail  )
+            elif "smt_verify" not in rewrite_result :
+                completion_contents.append( x_fail  )
+            else:
+                completion_contents.append( rewrite_result["smt_verify"]["score"]  )
+            
+                
+    
+    return completion_contents

@@ -64,7 +64,6 @@ reward_weights:
 save_strategy: "steps"
 save_steps: 100
 save_total_limit: 1
-save_only_model: true
 
 
 seed: 42

@@ -411,12 +411,13 @@ def reward_asserty_verify(completions, **kwargs):
 def reward_asserty_verify_with_esbmc(completions, **kwargs):
 
     assert "source_code" in  kwargs 
+    assert "idx" in  kwargs , list(kwargs)
     
-    def rewrite_content(source_code,assertation ):
+    def rewrite_content(source_code,assertation, idx ):
         if "assert" not in assertation.lower():
             return {"new_code":None}
         
-        data = {'source_code': source_code }
+        data = {'source_code': source_code, "idx":idx }
         ret =  request_auto(payload=data, target_path="rewrite")
         if ret is None :
             return {"new_code":None}
@@ -447,16 +448,17 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
     if "source_code" not in kwargs :
         logger.info("source code is null, current keawrgs == {}".format( list(kwargs ) ) )
     raw_source_code = kwargs["source_code"]
+    raw_idx = kwargs["idx"]
     
     
-    new_completions = list( zip(raw_source_code, assert_snippets ) )
+    new_completions = list( zip(raw_source_code, assert_snippets, raw_idx ) )
     
     completion_contents = []
     with ThreadPoolExecutor() as executor:
         futures = []
-        for source_code,assertation in new_completions:
+        for source_code,assertation,idx in new_completions:
 
-            future = executor.submit(rewrite_content, source_code ,assertation )
+            future = executor.submit(rewrite_content, source_code ,assertation, idx )
             futures.append((future, source_code))
         
         for future, source_code in futures:

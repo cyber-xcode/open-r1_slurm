@@ -1,5 +1,4 @@
 """Reward functions for GRPO training."""
-
 import json
 import math
 import re
@@ -9,6 +8,7 @@ from latex2sympy2_extended import NormalizationConfig
 from math_verify import LatexExtractionConfig, parse, verify
 
 from .utils import is_e2b_available
+from .utils import wired_text_detect 
 
 import random
 
@@ -45,7 +45,7 @@ def find_code_blocks(completion: str) -> str:
     matches = pattern.findall(completion)
     if len(matches) <= 0:
         matches = pattern_backup.findall(completion)
-    extracted_answer = matches[-1] if len(matches) >= 1 else ""
+    extracted_answer = matches[-1] if len(matches) >= 1 else completion
     return extracted_answer
 
 
@@ -448,24 +448,25 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
 def reward_asserty_verify_with_z3(completions, **kwargs):
     assert "smt_code" in kwargs
 
-    def _z3_verify(smt_code, assertion):
+    def _z3_verify(smt_code, assertion,idx):
         if "assert" not in assertion.lower():
             return None
         
         data = {'source_code': smt_code, "assertation": assertion}
-        return request_auto(payload=data, target_path="smt_verify")
+        return  request_auto(payload=data, target_path="smt_verify")
 
     assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
     raw_source_code = kwargs["smt_code"]
+    raw_idx  = kwargs["idx"]
 
-    new_completions = list(zip(raw_source_code, assert_snippets))
+    new_completions = list(zip(raw_source_code, assert_snippets,raw_idx))
 
     x_fail = 0
     x_pass = 1
 
     with ThreadPoolExecutor() as executor:
         # Use executor.map to process new_completions in order
-        results = executor.map(lambda x: _z3_verify(x[0], x[1]), new_completions)
+        results = executor.map(lambda x: _z3_verify(x[0], x[1],x[-1]), new_completions)
 
         completion_contents = []
         for rewrite_result in results:
@@ -478,3 +479,8 @@ def reward_asserty_verify_with_z3(completions, **kwargs):
                 completion_contents.append(rewrite_result["smt_verify"]["score"])
 
     return completion_contents
+
+def is_wired_text( completions, **kwargs ):
+    assert_snippets = [ completion[-1]["content"] for completion in completions]
+    flg_list =[ 1- int(wired_text_detect.is_wired_text( v_str ) ) for v_str in assert_snippets ] 
+    return  flg_list

@@ -35,6 +35,7 @@ from open_r1.rewards import (
     # len_reward,
     reasoning_steps_reward,
     tag_count_reward,
+    is_wired_text,
 )
 
 from open_r1.rewards import (
@@ -212,6 +213,7 @@ def main(script_args, training_args, model_args):
         ),
         # "length": len_reward,
         "code_format": get_code_format_reward(),
+        "is_wired_text":is_wired_text,
         "tag_count": tag_count_reward,
     }
     reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]

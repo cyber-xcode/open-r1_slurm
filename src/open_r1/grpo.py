@@ -168,7 +168,7 @@ def main(script_args, training_args, model_args):
         init_wandb_training(training_args)
 
     # Load the dataset
-    if script_args.dataset_name.endswith(".jsonl"):
+    if type(script_args.dataset_name) ==dict or  script_args.dataset_name.endswith(".jsonl"):
         dataset = load_dataset("json", data_files=script_args.dataset_name )
     else:
         dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
@@ -224,8 +224,9 @@ def main(script_args, training_args, model_args):
 
         if training_args.system_prompt is not None:
             prompt.append({"role": "system", "content": training_args.system_prompt})
+        pr= example["problem"].replace("Don't explain.","")
 
-        prompt.append({"role": "user", "content": example["problem"]})
+        prompt.append({"role": "user", "content": pr })
         return {"prompt": prompt}
 
     dataset = dataset.map(make_conversation)
@@ -243,7 +244,8 @@ def main(script_args, training_args, model_args):
         trust_remote_code=model_args.trust_remote_code,
         attn_implementation=model_args.attn_implementation,
         torch_dtype=torch_dtype,
-        use_cache=False if training_args.gradient_checkpointing else True,
+#        use_cache=False if training_args.gradient_checkpointing else True,
+        use_cache = False ,
     )
     training_args.model_init_kwargs = model_kwargs
 

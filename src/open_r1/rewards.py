@@ -45,7 +45,7 @@ def find_code_blocks(completion: str) -> str:
     matches = pattern.findall(completion)
     if len(matches) <= 0:
         matches = pattern_backup.findall(completion)
-    extracted_answer = matches[-1] if len(matches) >= 1 else completion
+    extracted_answer = matches[-1] if len(matches) >= 1 else ""
     return extracted_answer
 
 
@@ -158,11 +158,13 @@ def reward_remote_verify(completions, **kwargs):
 
 
 def format_reward(completions, **kwargs):
-    """Reward function that checks if the reasoning process is enclosed within <think> and </think> tags, while the final answer is enclosed within <answer> and </answer> tags."""
-    pattern = r"^<think>\n.*?\n</think>\n<answer>\n.*?\n</answer>$"
     completion_contents = [completion[0]["content"] for completion in completions]
-    matches = [re.match(pattern, content, re.DOTALL | re.MULTILINE) for content in completion_contents]
-    return [1.0 if match else 0.0 for match in matches]
+    completion_contents = [_format_reward (x) for x in completion_contents ]
+    return completion_contents 
+#    """Reward function that checks if the reasoning process is enclosed within <think> and </think> tags, while the final answer is enclosed within <answer> and </answer> tags."""
+#    pattern = r"^<think>\n.*?\n</think>\n<answer>\n.*?\n</answer>$"
+#    matches = [re.match(pattern, content, re.DOTALL | re.MULTILINE) for content in completion_contents]
+#    return [1.0 if match else 0.0 for match in matches]
 
 
 def tag_count_reward(completions, **kwargs) -> list[float]:
@@ -447,6 +449,7 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
 
 def reward_asserty_verify_with_z3(completions, **kwargs):
     assert "smt_code" in kwargs
+    do_print  = random.randint(0,64)==1
 
     def _z3_verify(smt_code, assertion,idx):
         if "assert" not in assertion.lower():
@@ -455,7 +458,7 @@ def reward_asserty_verify_with_z3(completions, **kwargs):
         data = {'source_code': smt_code, "assertation": assertion}
         return  request_auto(payload=data, target_path="smt_verify")
 
-    assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
+    assert_snippets = [extract_asserts(completion[-1]["content"]) for completion in completions]
     raw_source_code = kwargs["smt_code"]
     raw_idx  = kwargs["idx"]
 
@@ -475,7 +478,8 @@ def reward_asserty_verify_with_z3(completions, **kwargs):
             elif "smt_verify" not in rewrite_result:
                 completion_contents.append(x_fail)
             else:
-                print("rewrite_result", rewrite_result)
+                if do_print:
+                    print("rewrite_result", rewrite_result)
                 completion_contents.append(rewrite_result["smt_verify"]["score"])
 
     return completion_contents
@@ -484,3 +488,82 @@ def is_wired_text( completions, **kwargs ):
     assert_snippets = [ completion[-1]["content"] for completion in completions]
     flg_list =[ 1- int(wired_text_detect.is_wired_text( v_str ) ) for v_str in assert_snippets ] 
     return  flg_list
+
+
+def _format_reward(solution_str: str, ground_truth=None, *argv, **kwargs) -> float:
+
+
+    def extract_think_and_answer(solution_str: str):
+        solution_str = solution_str.strip()
+        
+        # Count occurrences of the tags (case-insensitive)
+        think_open_count = len(re.findall(r"(?i)<think>", solution_str))
+        think_close_count = len(re.findall(r"(?i)</think>", solution_str))
+        answer_open_count = len(re.findall(r"(?i)<answer>", solution_str))
+        answer_close_count = len(re.findall(r"(?i)</answer>", solution_str))
+        
+        if not (think_open_count == 1 and think_close_count == 1 and 
+                answer_open_count == 1 and answer_close_count == 1):
+            return None  # or raise an error if the format is not as expected
+    
+        # Define the strict pattern for the format
+        pattern = re.compile(
+            r"^<think>\s*(.*?)\s*</think>\n*\s*<answer>\s*```(?:cpp|php|python|java|c)?\n(.*?)\n```\s*</answer>$",
+            re.DOTALL | re.IGNORECASE
+        )
+        
+        match = re.search(pattern, solution_str)
+        if match:
+            think_content = match.group(1)
+            answer_content = match.group(2)
+            
+            answer_content_str = _extract_asserts( solution_str )
+            if not answer_content_str:
+                return None 
+            return think_content , answer_content
+        return None
+
+
+    matched_t_a = extract_think_and_answer( solution_str=solution_str )    
+    return 1.0 if matched_t_a else 0.0
+
+def _extract_asserts(response_str: str):
+    """
+    Remove code block markers (```) from the response string and extract all assert statements.
+    Returns a list of assert statements found.
+    """
+    def extract_solution(solution_str: str) -> str:
+        """
+        Extract the content between <answer> and </answer> tags from the solution string.
+        If no such tags are found, returns the original (stripped) string.
+        """
+        answer_open_count = len(re.findall(r"(?i)<answer>", solution_str))
+        answer_close_count = len(re.findall(r"(?i)</answer>", solution_str))
+
+        if not (answer_open_count == 1 and answer_close_count == 1):
+            return ""  # or raise an error if the format is not as expected
+
+        answer_pattern = r"<answer>\s*```(?:cpp|php|python|java|c)?\n(.*?)\n```\s*</answer>"
+
+        matches = list(re.finditer(answer_pattern, solution_str, re.DOTALL|re.MULTILINE))
+        if matches:
+            final_answer = matches[-1].group(1).strip()
+        else:
+            final_answer  = ""
+        # print ("final_answer", final_answer)
+        return final_answer
+
+    response_str = extract_solution( response_str )
+    # Remove code block markers (```...```) from the response string
+    response_str = re.sub(
+        r'```[\s\S]*?```', 
+        lambda m: m.group(0).replace('```', ''), 
+        response_str
+    )
+
+    return  re.findall(r'assert\s*\(.*?\)\s*;', response_str, re.DOTALL)
+
+
+
+def extract_asserts(response_str: str):
+    return "\n".join( _extract_asserts(response_str) )

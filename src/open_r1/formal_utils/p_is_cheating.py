@@ -153,12 +153,12 @@ def check_assert_cheating(source_code: str, assert_expr: str) -> bool:
 
 
 
-def p_is_cheating(a: str, b: str) -> bool:
+def p_is_cheating(source_code: str, assertation: str) -> bool:
     """
     """
 
-    aa = a+"\n"+b
-    if not check_assert_cheating( a,b ):
+    aa = source_code+"\n"+assertation
+    if not check_assert_cheating( source_code,assertation ):
 
         return is_assert_cheating(aa)
     else :

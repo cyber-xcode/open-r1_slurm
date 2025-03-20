@@ -52,6 +52,8 @@ from open_r1.rewards import (
     
     reward_asserty_verify_with_esbmc,
     reward_asserty_verify_with_z3, 
+
+    reward_asserty_verify_with_z3_counterexample_local, 
 )
 
 
@@ -196,6 +198,7 @@ def main(script_args, training_args, model_args):
 "reward_asserty_verify_with_esbmc":reward_asserty_verify_with_esbmc,
 "reward_asserty_verify_with_z3":reward_asserty_verify_with_z3,
     
+   "reward_asserty_verify_with_z3_counterexample_local" :reward_asserty_verify_with_z3_counterexample_local,
     
     
         "format": format_reward,
@@ -286,16 +289,6 @@ def main(script_args, training_args, model_args):
     trainer.save_model(training_args.output_dir)
     logger.info(f"Model saved to {training_args.output_dir}")
 
-    # Save everything else on main process
-    kwargs = {
-        "dataset_name": script_args.dataset_name,
-        "tags": ["open-r1"],
-    }
-    if trainer.accelerator.is_main_process:
-        trainer.create_model_card(**kwargs)
-        # Restore k,v cache for fast inference
-        trainer.model.config.use_cache = True
-        trainer.model.config.save_pretrained(training_args.output_dir)
 
     ##########
     # Evaluate
@@ -307,6 +300,16 @@ def main(script_args, training_args, model_args):
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
+    # Save everything else on main process
+    kwargs = {
+        "dataset_name": script_args.dataset_name,
+        "tags": ["open-r1"],
+    }
+    if trainer.accelerator.is_main_process:
+        trainer.create_model_card(**kwargs)
+        # Restore k,v cache for fast inference
+        trainer.model.config.use_cache = True
+        trainer.model.config.save_pretrained(training_args.output_dir)
     #############
     # push to hub
     #############

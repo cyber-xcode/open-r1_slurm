@@ -26,6 +26,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import re 
 
+from .se_formal import _imp_asserty_verify_with_z3_counterexample
+
+
 logger = logging.getLogger(__file__)
 BASE_URL = "http://127.0.0.1:5000"
 
@@ -175,13 +178,13 @@ def tag_count_reward(completions, **kwargs) -> list[float]:
 
     def count_tags(text: str) -> float:
         count = 0.0
-        if text.count("<think>\n") == 1:
+        if text.count("<think>") == 1:
             count += 0.25
-        if text.count("\n</think>\n") == 1:
+        if text.count("</think>") == 1:
             count += 0.25
-        if text.count("\n<answer>\n") == 1:
+        if text.count("<answer>") == 1:
             count += 0.25
-        if text.count("\n</answer>") == 1:
+        if text.count("</answer>") == 1:
             count += 0.25
         return count
 
@@ -567,3 +570,96 @@ def _extract_asserts(response_str: str):
 
 def extract_asserts(response_str: str):
     return "\n".join( _extract_asserts(response_str) )
+
+
+
+
+
+
+
+import asyncio
+import traceback
+from functools import partial
+from concurrent.futures import ProcessPoolExecutor 
+# as ThreadPoolExecutor 
+
+async def single_compute_score(evaluation_func, completion, reference, task_extra_info, executor, timeout=300.):
+    loop = asyncio.get_running_loop()
+    try:
+        task = asyncio.wait_for(
+            loop.run_in_executor(
+                executor,
+                partial(evaluation_func, completion, reference, task_extra_info)
+            ),
+            timeout=timeout
+        )
+        return await asyncio.gather(task)
+    except asyncio.TimeoutError:
+        traceback.print_exc()
+        print(f"Timeout occurred for completion: {completion}")
+        return None
+    except Exception as e:
+        traceback.print_exc()
+        print(f"Error processing completion: {completion[:10]}, Error: {e}")
+        return None
+
+
+
+async def parallel_compute_score_async(evaluation_func, completions, references, extra_info=None, num_threads=64):
+    scores = []
+    with ProcessPoolExecutor(max_workers=num_threads) as executor:
+        if extra_info is None:
+            extra_info = [None] * len(completions)
+        tasks_async = [
+            single_compute_score(evaluation_func, comp, ref, info, executor, timeout=300.)
+            for comp, ref, info in zip(completions, references, extra_info)
+        ]
+        try:
+            results = await asyncio.gather(*tasks_async, return_exceptions=False)
+        except Exception:
+            traceback.print_exc()
+            raise
+
+    for result, comp, ref in zip(results, completions, references):
+        if result is None or isinstance(result, Exception):
+            scores.append(0.0)
+        elif isinstance(result[0], (int, float, bool)):
+            scores.append(float(result[0]))
+        else:
+            scores.append(float(result[0][0]))
+    return scores
+
+
+
+
+def _process_with_inputx_outputy(function_name, sequences_str, ground_truth=None):
+    if ground_truth is None:
+        ground_truth = [None] * len(sequences_str)
+    assert len(sequences_str) == len(ground_truth)
+    try:
+        scores = asyncio.run(
+            parallel_compute_score_async(function_name, sequences_str, ground_truth, num_threads=64)
+        )
+    except asyncio.TimeoutError:
+        traceback.print_exc()
+        print('Global timeout in reward computing! Setting all as 0.')
+        scores = [0.0 for _ in range(len(sequences_str))]
+    except Exception as e:
+        traceback.print_exc()
+        print(f"Unexpected error in batched reward computing. Setting all as 0.: {e}")
+        scores = [0.0 for _ in range(len(sequences_str))]
+    return scores
+
+
+def reward_asserty_verify_with_z3_counterexample_local(completions, **kwargs):
+    assert "smt_code" in kwargs, "smt_code is required"
+    smt_code = kwargs["smt_code"]
+    s_code = kwargs.get("source_code", [None] * len(completions))
+    ground_truth = [{"smt_code": x, "source_code": y} for x, y in zip(smt_code, s_code)]
+    solution_list = [comp[0]["content"] for comp in completions]
+    solution_list = [extract_asserts(s) for s in solution_list]
+    return _process_with_inputx_outputy(
+        _imp_asserty_verify_with_z3_counterexample,
+        sequences_str=solution_list,
+        ground_truth=ground_truth
+    )

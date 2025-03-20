@@ -19,7 +19,8 @@ def add_parentheses_to_pow_args(expression):
 
 
 
-def smt_resolve_api(SMT2str,result, total_assert_c = None, fail_score=0.1 , success_score=1.0,  error_score=0  ):
+def smt_resolve_api(SMT2str,result, total_assert_c = None, fail_score=0.1 , success_score=1.0,  error_score=0.0  ):
+    result_ori = result  
     if type(result)!=str  and type(result) in [tuple,list]:
         result = "\n".join( result )
     
@@ -31,7 +32,7 @@ def smt_resolve_api(SMT2str,result, total_assert_c = None, fail_score=0.1 , succ
         return {
             "total_assert_c": total_assert_c, 
             "status_list":[],
-            "score": 0 , 
+            "score": error_score , 
             "msg":"cannot find assert from C",
             }
         
@@ -43,13 +44,19 @@ def smt_resolve_api(SMT2str,result, total_assert_c = None, fail_score=0.1 , succ
     
     result_new = [x for x in result if "?" not in x ]
     
-    smtlib2=convert_and_split.convert_c_assert_list_to_smtlib2(result_new)
-    if len(smtlib2) == 0 :
+    smtlib2 = None 
+    try:
+        smtlib2=convert_and_split.convert_c_assert_list_to_smtlib2(result_new)
+    except Exception : 
+        pass 
+    # except AttributeError : 
+    #     pass 
+    if not smtlib2 or len(smtlib2) == 0 :
         return {
             "total_assert_c": 0, 
             "status_list":[],
-            "score": 0 , 
-            "msg":"cannot convert c to smt2",
+            "score": error_score , 
+            "msg":"cannot convert c to smt2, assert is {}, -> origin assert {}".format( result_new, result_ori ),
             }
         
         
@@ -76,6 +83,8 @@ def smt_resolve_api(SMT2str,result, total_assert_c = None, fail_score=0.1 , succ
         except AssertionError as OOT:  # Out Of Time
             verified = fail_score
         except z3.Z3Exception:
+            verified = error_score
+        except Exception :
             verified = error_score
              
         

@@ -76,7 +76,7 @@ class Parser:
     def eat(self, token=None):
         cur = self.current()
         if token and cur != token:
-            raise Exception(f"Expected token '{token}' but got '{cur}'")
+            raise ValueError(f"Expected token '{token}' but got '{cur}'")
         self.pos += 1
         return cur
 
@@ -152,7 +152,7 @@ class Parser:
             if self.current() == ')':
                 self.eat(')')
             else:
-                raise Exception("Expected token ')' in cast")
+                raise ValueError("Expected token ')' in cast")
             cast_str = " ".join(cast_tokens)
             # Accept casts such as "signed char", "unsigned int", etc.
             if re.fullmatch(r'(unsigned\s+)?((signed\s+char)|(short)|(int)|(long)|(char)|(float)|(double)|(long\s+long)|(long\s+double))', cast_str):
@@ -172,7 +172,7 @@ class Parser:
             elif not (re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_]*', token) or
                       re.fullmatch(r'\d+(\.\d*)?([eE][-+]?\d+)?[uUlLfF]*', token) or
                       re.fullmatch(r'0x[0-9a-fA-F]+', token)):
-                raise Exception(f"Invalid token '{token}' in expression")
+                raise ValueError(f"Invalid token '{token}' in expression")
             else:
                 node = token
         # Handle function calls
@@ -224,7 +224,7 @@ def ast_to_smtlib2(ast):
             elif op == '-':
                 return f"(- {ast_to_smtlib2(expr)})"
             else:
-                raise Exception("Unknown unary operator: " + op)
+                raise ValueError("Unknown unary operator: " + op)
         elif len(ast) == 3:
             op, left, right = ast
             if op == "select":
@@ -243,9 +243,9 @@ def ast_to_smtlib2(ast):
             elif op == '%':
                 return f"(mod {ast_to_smtlib2(left)} {ast_to_smtlib2(right)})"
             else:
-                raise Exception("Unknown binary operator: " + op)
+                raise ValueError("Unknown binary operator: " + op)
         else:
-            raise Exception("Invalid AST node: " + str(ast))
+            raise ValueError("Invalid AST node: " + str(ast))
     else:
         if re.fullmatch(r'0x[0-9a-fA-F]+', ast):
             return str(int(ast, 16))
@@ -268,7 +268,7 @@ def ast_to_smtlib2(ast):
             elif op == '-':
                 return f"(- {ast_to_smtlib2(expr)})"
             else:
-                raise Exception("Unknown unary operator: " + op)
+                raise ValueError("Unknown unary operator: " + op)
         elif len(ast) == 3:
             op, left, right = ast
             if op == "select":
@@ -286,9 +286,9 @@ def ast_to_smtlib2(ast):
             elif op == '%':
                 return f"(mod {ast_to_smtlib2(left)} {ast_to_smtlib2(right)})"
             else:
-                raise Exception("Unknown binary operator: " + op)
+                raise ValueError("Unknown binary operator: " + op)
         else:
-            raise Exception("Invalid AST node: " + str(ast))
+            raise ValueError("Invalid AST node: " + str(ast))
     else:
         if re.fullmatch(r'0x[0-9a-fA-F]+', ast):
             return str(int(ast, 16))
@@ -323,7 +323,7 @@ def convert_assert_to_smtlib2(c_assert):
     ast = parser.parse_expression()
     
     if parser.pos != len(tokens):
-        raise Exception("Extra tokens after valid expression")
+        raise ValueError("Extra tokens after valid expression")
     
     smt_expr = ast_to_smtlib2(ast)
     return f"(assert {smt_expr})"

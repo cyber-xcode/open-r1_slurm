@@ -45,9 +45,25 @@ report_to:
 - tensorboard
 - wandb
 reward_funcs:
+- reward_asserty_p_check_assert_syntax
+- reward_asserty_p_is_cheating
+- is_wired_text
+- repetition_penalty
+- tag_count
+- code_format
+
+
 - reward_asserty_verify_with_z3
 - format
 reward_weights:
+- 1
+- 1
+- 1
+- 1
+- 1
+- 1
+
+
 - 10.0
 - 1.0
 

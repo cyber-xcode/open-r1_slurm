@@ -23,14 +23,17 @@ def set_libclang_using_llvm_config():
         
         # Set the library file path.
         Config.set_library_file(libclang_path)
-        print("Successfully set libclang library file to:", libclang_path)
+        #print("Successfully set libclang library file to:", libclang_path)
     except subprocess.CalledProcessError as e:
         print("Error executing llvm-config:", e)
     except Exception as e:
         print("Error setting libclang library file:", e)
-
-# Call the function early in your code before using clang.cindex features.
-set_libclang_using_llvm_config()
+libclang_path="/usr/lib/llvm-14/lib/libclang.so"
+if not os.path.isfile(libclang_path):
+    # Call the function early in your code before using clang.cindex features.
+    set_libclang_using_llvm_config()
+else:
+    Config.set_library_file(libclang_path)
 
 def extract_context_vars_clang(c_code: str) -> list:
     """

@@ -290,17 +290,18 @@ def main(script_args, training_args, model_args):
         "dataset_name": script_args.dataset_name,
         "tags": ["open-r1"],
     }
-    if trainer.accelerator.is_main_process:
-        trainer.create_model_card(**kwargs)
-        # Restore k,v cache for fast inference
-        trainer.model.config.use_cache = True
-        trainer.model.config.save_pretrained(training_args.output_dir)
+    #logger.info("*** save k,v key and save_pretrained  ***")
+    #if trainer.accelerator.is_main_process:
+    #    trainer.create_model_card(**kwargs)
+    #    # Restore k,v cache for fast inference
+    #    trainer.model.config.use_cache = True
+    #    trainer.model.config.save_pretrained(training_args.output_dir)
     #############
     # push to hub
     #############
-    if training_args.push_to_hub:
-        logger.info("Pushing to hub...")
-        trainer.push_to_hub(**kwargs)
+    #if training_args.push_to_hub:
+    #    logger.info("Pushing to hub...")
+    #    trainer.push_to_hub(**kwargs)
 
 
 

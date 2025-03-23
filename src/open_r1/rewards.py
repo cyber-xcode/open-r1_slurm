@@ -1,173 +1,80 @@
 """Reward functions for GRPO training."""
+
+import asyncio
 import json
 import math
 import re
-from typing import Dict
+from functools import partial, update_wrapper
+from typing import Callable, Dict
 
 from latex2sympy2_extended import NormalizationConfig
 from math_verify import LatexExtractionConfig, parse, verify
 
 from .utils import is_e2b_available
-from .utils import wired_text_detect 
-
-import random
-
-import json
-import math
-import re
-from typing import Dict
-import os
-import requests
-import backoff
-import logging
-from concurrent.futures import ThreadPoolExecutor
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import re 
-
-from .se_formal import _imp_asserty_verify_with_z3_counterexample
-
-
-logger = logging.getLogger(__file__)
-BASE_URL = "http://127.0.0.1:5000"
-
+from .utils.ioi import SubtaskResult, add_includes, get_piston_client_from_env, score_subtask
 
 
 if is_e2b_available():
     from dotenv import load_dotenv
-    from e2b_code_interpreter import Sandbox
+    from e2b_code_interpreter import AsyncSandbox
 
     load_dotenv()
+else:
+    AsyncSandbox = None
 
 
-def find_code_blocks(completion: str) -> str:
-    # Updated pattern to match any language (optional language after ``` and before \n)
-    pattern = re.compile(r"```[a-zA-Z+]*\n(.*?)```", re.DOTALL | re.MULTILINE | re.IGNORECASE)
-    pattern_backup = re.compile(r"```(.*?)```", re.DOTALL | re.MULTILINE | re.IGNORECASE)
-    matches = pattern.findall(completion)
-    if len(matches) <= 0:
-        matches = pattern_backup.findall(completion)
-    extracted_answer = matches[-1] if len(matches) >= 1 else ""
-    return extracted_answer
+def accuracy_reward(completions, solution, **kwargs):
+    """Reward function that checks if the completion is the same as the ground truth."""
+    contents = [completion[0]["content"] for completion in completions]
+    rewards = []
+    for content, sol in zip(contents, solution):
+        gold_parsed = parse(
+            sol,
+            extraction_mode="first_match",
+            extraction_config=[LatexExtractionConfig()],
+        )
+        if len(gold_parsed) != 0:
+            # We require the answer to be provided in correct latex (no malformed operators)
+            answer_parsed = parse(
+                content,
+                extraction_config=[
+                    LatexExtractionConfig(
+                        normalization_config=NormalizationConfig(
+                            nits=False,
+                            malformed_operators=False,
+                            basic_latex=True,
+                            equations=True,
+                            boxed="all",
+                            units=True,
+                        ),
+                        # Ensures that boxed is tried first
+                        boxed_match_priority=0,
+                        try_extract_without_anchor=False,
+                    )
+                ],
+                extraction_mode="first_match",
+            )
+            # Reward 1 if the content is the same as the ground truth, 0 otherwise
+            try:
+                reward = float(verify(answer_parsed, gold_parsed))
+            except Exception as e:
+                print(f"verify failed: {e}, answer: {answer_parsed}, gold: {gold_parsed}")
+                reward = 0.0
+        else:
+            # If the gold solution is not parseable, we reward 1 to skip this example
+            reward = 1.0
+            print("Failed to parse gold solution: ", sol)
+        rewards.append(reward)
 
-
-
-def request_auto(payload, target_path="", timeout=30):
-    url = os.path.join(BASE_URL, target_path)
-    try:
-        response = requests.post(url, json=payload, timeout=timeout )
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as ex:
-        # logger.info(str(ex))
-        return None
-    except requests.exceptions.ReadTimeout as ex:
-        # logger.info(str(ex))
-        return None
-
-
-
-def reward_remote_check_syntax(completions, **kwargs):
-    func = lambda x: request_auto({"source_code": x}, target_path="check_syntax")
-    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
-    with ThreadPoolExecutor() as executor:
-        # Using executor.map preserves the order of completion_contents
-        completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["check_syntax"]) if x is not None else 0.5 for x in completion_contents]
-    return completion_contents
-
-
-def reward_remote_check_is_loop(completions, **kwargs):
-    func = lambda x: request_auto({"source_code": x}, target_path="check_is_loop")
-    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
-    with ThreadPoolExecutor() as executor:
-        completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["check_is_loop"]) if x is not None else 0.5 for x in completion_contents]
-    return completion_contents
-
-
-def reward_remote_is_loop_invariant_format(completions, **kwargs):
-    func = lambda x: request_auto({"source_code": x}, target_path="is_loop_invariant_format")
-    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
-    with ThreadPoolExecutor() as executor:
-        completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["is_loop_invariant_format"]) if x is not None else 0.5 for x in completion_contents]
-    return completion_contents
-
-
-def reward_remote_check_has_post_condition(completions, **kwargs):
-    func = lambda x: request_auto({"source_code": x}, target_path="check_has_post_condition")
-    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
-    # print(completions, "completion_contents...........", completion_contents)
-    with ThreadPoolExecutor() as executor:
-        completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["has_post_condition"]) if x is not None else 0.5 for x in completion_contents]
-    return completion_contents
-
-
-def reward_remote_check_is_cheating(completions, **kwargs):
-    func = lambda x: request_auto({"source_code": x}, target_path="check_is_cheating")
-    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
-    with ThreadPoolExecutor() as executor:
-        completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["check_is_cheating"]) if x is not None else 0.5 for x in completion_contents]
-    completion_contents = [ 1-x  for x in completion_contents]
-
-    return completion_contents
-
-
-def reward_remote_verify(completions, **kwargs):
-    def rewrite_content(source_code):
-        url = f"{BASE_URL}/rewrite"
-        data = {'source_code': source_code}
-        d= request_auto(payload=data, target_path="rewrite")
-        return d 
-    
-    def lemur_verifier_with_prop(source_code, property="unreach-call"):
-        assert property in ["unreach-call", "termination"]
-        data = {'source_code': source_code, "property": property}
-        return request_auto(payload=data, target_path="lemur_verifier_with_prop")
-    
-    completion_contents = []
-    with ThreadPoolExecutor() as executor:
-        futures = []
-        for completion in completions:
-            source_code = completion[0]["content"]
-            source_code = find_code_blocks(source_code)
-            future = executor.submit(rewrite_content, source_code)
-            futures.append((future, source_code))
-        
-        for future, source_code in futures:
-            rewrite_result = future.result()
-            flg = 0 
-            if rewrite_result is not None :
-                new_content = rewrite_result.get('new_code', source_code)
-                future_lemur = executor.submit(lemur_verifier_with_prop, new_content, property=kwargs.get("property", "unreach-call"))
-                lemur_verifier_result_rewrite = future_lemur.result()
-                status = lemur_verifier_result_rewrite["status"]
-                if status == 1:
-                    flg = 1
-                elif status == 2:
-                    flg = 0
-                elif status == 3:
-                    flg = 0.1  # unknown error, less trust
-                else:
-                    flg = 0.2  # timeout
-            completion_contents.append(float(flg))
-    return completion_contents
-
-
+    return rewards
 
 
 def format_reward(completions, **kwargs):
+    """Reward function that checks if the reasoning process is enclosed within <think> and </think> tags, while the final answer is enclosed within <answer> and </answer> tags."""
+    pattern = r"^<think>\n.*?\n</think>\n<answer>\n.*?\n</answer>$"
     completion_contents = [completion[0]["content"] for completion in completions]
-    completion_contents = [_format_reward (x) for x in completion_contents ]
-    return completion_contents 
-#    """Reward function that checks if the reasoning process is enclosed within <think> and </think> tags, while the final answer is enclosed within <answer> and </answer> tags."""
-#    pattern = r"^<think>\n.*?\n</think>\n<answer>\n.*?\n</answer>$"
-#    matches = [re.match(pattern, content, re.DOTALL | re.MULTILINE) for content in completion_contents]
-#    return [1.0 if match else 0.0 for match in matches]
+    matches = [re.match(pattern, content, re.DOTALL | re.MULTILINE) for content in completion_contents]
+    return [1.0 if match else 0.0 for match in matches]
 
 
 def tag_count_reward(completions, **kwargs) -> list[float]:
@@ -178,13 +85,13 @@ def tag_count_reward(completions, **kwargs) -> list[float]:
 
     def count_tags(text: str) -> float:
         count = 0.0
-        if text.count("<think>") == 1:
+        if text.count("<think>\n") == 1:
             count += 0.25
-        if text.count("</think>") == 1:
+        if text.count("\n</think>\n") == 1:
             count += 0.25
-        if text.count("<answer>") == 1:
+        if text.count("\n<answer>\n") == 1:
             count += 0.25
-        if text.count("</answer>") == 1:
+        if text.count("\n</answer>") == 1:
             count += 0.25
         return count
 
@@ -209,8 +116,153 @@ def reasoning_steps_reward(completions, **kwargs):
     return [min(1.0, count / 3) for count in matches]
 
 
+def len_reward(completions: list[Dict[str, str]], solution: list[str], **kwargs) -> float:
+    """Compute length-based rewards to discourage overthinking and promote token efficiency.
+
+    Taken from the Kimi 1.5 tech report: https://arxiv.org/abs/2501.12599
+
+    Args:
+        completions: List of model completions
+        solution: List of ground truth solutions
+
+    Returns:
+        List of rewards where:
+        - For correct answers: reward = 0.5 - (len - min_len)/(max_len - min_len)
+        - For incorrect answers: reward = min(0, 0.5 - (len - min_len)/(max_len - min_len))
+    """
+    contents = [completion[0]["content"] for completion in completions]
+
+    # First check correctness of answers
+    correctness = []
+    for content, sol in zip(contents, solution):
+        gold_parsed = parse(
+            sol,
+            extraction_mode="first_match",
+            extraction_config=[LatexExtractionConfig()],
+        )
+        if len(gold_parsed) == 0:
+            # Skip unparseable examples
+            correctness.append(True)  # Treat as correct to avoid penalizing
+            print("Failed to parse gold solution: ", sol)
+            continue
+
+        answer_parsed = parse(
+            content,
+            extraction_config=[
+                LatexExtractionConfig(
+                    normalization_config=NormalizationConfig(
+                        nits=False,
+                        malformed_operators=False,
+                        basic_latex=True,
+                        equations=True,
+                        boxed=True,
+                        units=True,
+                    ),
+                    boxed_match_priority=0,
+                    try_extract_without_anchor=False,
+                )
+            ],
+            extraction_mode="first_match",
+        )
+        correctness.append(verify(answer_parsed, gold_parsed))
+
+    # Calculate lengths
+    lengths = [len(content) for content in contents]
+    min_len = min(lengths)
+    max_len = max(lengths)
+
+    # If all responses have the same length, return zero rewards
+    if max_len == min_len:
+        return [0.0] * len(completions)
+
+    rewards = []
+    for length, is_correct in zip(lengths, correctness):
+        lambda_val = 0.5 - (length - min_len) / (max_len - min_len)
+
+        if is_correct:
+            reward = lambda_val
+        else:
+            reward = min(0, lambda_val)
+
+        rewards.append(float(reward))
+
+    return rewards
 
 
+def get_cosine_scaled_reward(
+    min_value_wrong: float = -1.0,
+    max_value_wrong: float = -0.5,
+    min_value_correct: float = 0.5,
+    max_value_correct: float = 1.0,
+    max_len: int = 1000,
+):
+    def cosine_scaled_reward(completions, solution, **kwargs):
+        """Reward function that scales based on completion length using a cosine schedule.
+
+        Shorter correct solutions are rewarded more than longer ones.
+        Longer incorrect solutions are penalized less than shorter ones.
+
+        Args:
+            completions: List of model completions
+            solution: List of ground truth solutions
+
+        This function is parameterized by the following arguments:
+            min_value_wrong: Minimum reward for wrong answers
+            max_value_wrong: Maximum reward for wrong answers
+            min_value_correct: Minimum reward for correct answers
+            max_value_correct: Maximum reward for correct answers
+            max_len: Maximum length for scaling
+        """
+        contents = [completion[0]["content"] for completion in completions]
+        rewards = []
+
+        for content, sol in zip(contents, solution):
+            gold_parsed = parse(sol, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
+            if len(gold_parsed) == 0:
+                rewards.append(1.0)  # Skip unparseable examples
+                print("Failed to parse gold solution: ", sol)
+                continue
+
+            answer_parsed = parse(
+                content,
+                extraction_config=[
+                    LatexExtractionConfig(
+                        normalization_config=NormalizationConfig(
+                            nits=False,
+                            malformed_operators=False,
+                            basic_latex=True,
+                            equations=True,
+                            boxed=True,
+                            units=True,
+                        ),
+                        boxed_match_priority=0,
+                        try_extract_without_anchor=False,
+                    )
+                ],
+                extraction_mode="first_match",
+            )
+
+            is_correct = verify(answer_parsed, gold_parsed)
+            gen_len = len(content)
+
+            # Apply cosine scaling based on length
+            progress = gen_len / max_len
+            cosine = math.cos(progress * math.pi)
+
+            if is_correct:
+                min_value = min_value_correct
+                max_value = max_value_correct
+            else:
+                # Swap min/max for incorrect answers
+                min_value = max_value_wrong
+                max_value = min_value_wrong
+
+            reward = min_value + 0.5 * (max_value - min_value) * (1.0 + cosine)
+            rewards.append(float(reward))
+
+        return rewards
+
+    return cosine_scaled_reward
 
 
 def get_repetition_penalty_reward(ngram_size: int, max_penalty: float):
@@ -262,13 +314,153 @@ def get_repetition_penalty_reward(ngram_size: int, max_penalty: float):
     return repetition_penalty_reward
 
 
-def extract_code(completion: str) -> str:
-    pattern = re.compile(r"```python\n(.*?)```", re.DOTALL)
+def _init_event_loop():
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop
+
+
+def ioi_code_reward(completions, test_batch_size: int = 1, **kwargs) -> list[float]:
+    """Reward function that evaluates IOI problems using Piston+our IOI package.
+
+    Assumes the dataset has the same format as hf.co/datasets/open-r1/ioi
+
+    test_batch_size: evaluate these many test cases in parallel, then check if any of them failed (0 score): if so stop evaluating; otherwise continue with the next batch of test cases.
+    """
+    # for info on setting up piston workers, see slurm/piston/README.md
+    piston_client = get_piston_client_from_env()
+
+    code_snippets = [
+        # note: grading is automatically skipped if no code is extracted
+        add_includes(extract_code(completion[-1]["content"], "cpp"), problem_id)
+        for completion, problem_id in zip(completions, kwargs["id"])
+    ]
+
+    async def run_catch_exceptions(task):
+        try:
+            return await task
+        except Exception as e:
+            print(f"Error from Piston worker: {e}")
+            return SubtaskResult()  # score 0.0
+
+    # load problem data. undo separating kwargs by column
+    problems_data = [dict(zip(kwargs.keys(), values)) for values in zip(*kwargs.values())]
+
+    loop = _init_event_loop()
+    evals = [
+        loop.create_task(
+            run_catch_exceptions(score_subtask(piston_client, problem_data, code, test_batch_size=test_batch_size))
+        )
+        for problem_data, code in zip(problems_data, code_snippets)
+    ]
+    results = loop.run_until_complete(asyncio.gather(*evals))
+
+    return [result.score for result in results]
+
+
+def extract_code(completion: str, language: str = "python") -> str:
+    pattern = re.compile(rf"```{language}\n(.*?)```", re.DOTALL)
     matches = pattern.findall(completion)
     extracted_answer = matches[-1] if len(matches) >= 1 else ""
     return extracted_answer
 
 
+def binary_code_reward(completions, **kwargs) -> list[float]:
+    rewards = code_reward(completions, **kwargs)
+    BINARY_THRESHOLD = 0.99
+    return [1.0 if reward > BINARY_THRESHOLD else 0.0 for reward in rewards]
+
+
+def code_reward(completions, **kwargs) -> list[float]:
+    """Reward function that evaluates code snippets using the E2B code interpreter.
+
+    Assumes the dataset contains a `verification_info` column with test cases.
+    """
+    if not is_e2b_available():
+        raise ImportError(
+            "E2B is not available and required for this reward function. Please install E2B with "
+            "`pip install e2b-code-interpreter` and add an API key to a `.env` file."
+        )
+
+    # TODO: add support for other languages in E2B: https://e2b.dev/docs/code-interpreting/supported-languages
+    """Returns a reward function that evaluates code snippets in a sandbox."""
+    evaluation_script_template = """
+    import subprocess
+    import json
+
+    def evaluate_code(code, test_cases):
+        passed = 0
+        total = len(test_cases)
+        exec_timeout = 5
+
+        for case in test_cases:
+            process = subprocess.run(
+                ["python3", "-c", code],
+                input=case["input"],
+                text=True,
+                capture_output=True,
+                timeout=exec_timeout
+            )
+
+            if process.returncode != 0:  # Error in execution
+                continue
+
+            output = process.stdout.strip()
+
+            # TODO: implement a proper validator to compare against ground truth. For now we just check for exact string match on each line of stdout.
+            all_correct = True
+            for line1, line2 in zip(output.split('\\n'), case['output'].split('\\n')):
+                all_correct = all_correct and line1.strip() == line2.strip()
+
+            if all_correct:
+                passed += 1
+
+        success_rate = (passed / total)
+        return success_rate
+
+    code_snippet = {code}
+    test_cases = json.loads({test_cases})
+
+    evaluate_code(code_snippet, test_cases)
+    """
+    code_snippets = [extract_code(completion[-1]["content"]) for completion in completions]
+    verification_info = kwargs["verification_info"]
+    scripts = [
+        evaluation_script_template.format(code=json.dumps(code), test_cases=json.dumps(json.dumps(info["test_cases"])))
+        for code, info in zip(code_snippets, verification_info)
+    ]
+
+    language = verification_info[0]["language"]
+
+    if not all(v["language"] == language for v in verification_info):
+        raise ValueError("All verification_info must have the same language", verification_info)
+    try:
+        rewards = run_async_from_sync(scripts, language)
+
+    except Exception as e:
+        print(f"Error from E2B executor: {e}")
+        rewards = [0.0] * len(completions)
+
+    return rewards
+
+
+# def get_code_format_reward(language: str = "c"):
+#     """Format reward function specifically for code responses.
+#
+#     Args:
+#         language: Programming language supported by E2B https://e2b.dev/docs/code-interpreting/supported-languages
+#     """
+#     pattern = rf"^<think>\n.*?\n</think>\n<answer>\n.*?```{language}.*?```.*?\n</answer>$"
+#
+#     def code_format_reward(completions, **kwargs):
+#         completion_contents = [completion[0]["content"] for completion in completions]
+#         matches = [re.match(pattern, content, re.DOTALL | re.MULTILINE) for content in completion_contents]
+#         return [1.0 if match else 0.0 for match in matches]
+#
+#     return code_format_reward
 
 def get_code_format_reward(language: str = "c"):
     """Format reward function specifically for code responses.
@@ -276,7 +468,8 @@ def get_code_format_reward(language: str = "c"):
     Args:
         language: Programming language supported by E2B https://e2b.dev/docs/code-interpreting/supported-languages
     """
-    pattern = rf"^<think>\n.*?\n</think>\n<answer>\n.*?```{language}.*?```.*?\n</answer>$"
+    pattern =r"^<think>\s*(.*?)\s*</think>\n*\s*<answer>\s*```(?:cpp|php|python|java|c)?\n(.*?)\n```\s*</answer>$",
+
 
     def code_format_reward(completions, **kwargs):
         completion_contents = [completion[0]["content"] for completion in completions]
@@ -287,379 +480,71 @@ def get_code_format_reward(language: str = "c"):
 
 
 
-
-
-
-
-
-def reward_asserty_p_check_assert_syntax(completions, **kwargs):
-    func = lambda x: request_auto({"source_code": x}, target_path="p_check_assert_syntax")
-    completion_contents = [find_code_blocks(completion[0]["content"]) for completion in completions]
-    with ThreadPoolExecutor() as executor:
-        # Using executor.map preserves the order of completion_contents
-        completion_contents = list(executor.map(func, completion_contents))
-    completion_contents = [float(x["p_check_assert_syntax"]) if x is not None else 0 for x in completion_contents]
-    return completion_contents
-
-
-
-def reward_asserty_p_is_cheating(completions, **kwargs):
-    # assert "source_code" in  kwargs 
-    raw_source_code = kwargs.get("source_code",[""]*len(completions) )
-    
-    assert_snippets = [find_code_blocks(completion[0]["content"]) for completion in completions]
-
-    new_completions = list( zip(raw_source_code, assert_snippets ) )
-
-    func = lambda x: request_auto({"source_code": x[0], "assertation":x[-1] } , target_path="p_is_cheating")
-
-    with ThreadPoolExecutor() as executor:
-        completion_contents = list(executor.map(func, new_completions))
-    completion_contents = [float(x["p_is_cheating"]) if x is not None else 0 for x in completion_contents]
-
-    completion_contents = [ 1-x  for x in completion_contents]
-
-    return completion_contents
-
-
-
-
-
-def reward_asserty_verify(completions, **kwargs):
-    assert "source_code" in kwargs
-
-    def rewrite_content(source_code, assertion):
-        if "assert" not in assertion.lower():
-            return {"new_code": None}
-
-        data = {'source_code': source_code}
-        ret = request_auto(payload=data, target_path="rewrite")
-        new_code = ret.get("new_code", None)
-
-        if new_code is None:
-            return {"new_code": None}
-
-        data = {'source_code': new_code, "assertation": "\n" + assertion + "\n"}
-        inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
-        inserted_code = inserted_code.get("p_insert_invariant_from_clangindex", None)
-
-        if inserted_code is None:
-            return {"new_code": None}
-
-        return {"new_code": inserted_code}
-
-    def lemur_verifier_with_prop(source_code, property="unreach-call"):
-        assert property in ["unreach-call", "termination"]
-        data = {'source_code': source_code, "property": property}
-        return request_auto(payload=data, target_path="lemur_verifier_with_prop")
-
-    assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
-    raw_source_code = kwargs["source_code"]
-    new_completions = list(zip(raw_source_code, assert_snippets))
-
-    completion_contents = []
-
-    with ThreadPoolExecutor() as executor:
-        # Use executor.map to process new_completions in order
-        rewrite_results = executor.map(lambda x: rewrite_content(x[0], x[1]), new_completions)
-
-        for rewrite_result in rewrite_results:
-            new_content = rewrite_result.get('new_code', None)
-
-            if new_content is not None:
-                lemur_verifier_result_rewrite = lemur_verifier_with_prop(new_content, property=kwargs.get("property", "unreach-call"))
-                status = lemur_verifier_result_rewrite["status"]
-            else:
-                status = 2
-
-            if status == 1:
-                flg = 1
-            elif status == 2:
-                flg = 0
-            elif status == 3:
-                flg = 0.1  # unknown error, less trust
-            else:
-                flg = 0.2  # timeout
-
-            completion_contents.append(float(flg))
-
-    return completion_contents
-
-
-
-def reward_asserty_verify_with_esbmc(completions, **kwargs):
-    assert "source_code" in kwargs
-    assert "idx" in kwargs, list(kwargs)
-
-    def rewrite_content(source_code, assertion, idx):
-        if "assert" not in assertion.lower():
-            return {"new_code": None}
-
-        data = {'source_code': source_code, "idx": idx}
-        ret = request_auto(payload=data, target_path="rewrite")
-        if ret is None:
-            return {"new_code": None}
-        new_code = ret.get("new_code", None)
-
-        if new_code is None:
-            return {"new_code": None}
-
-        data = {'source_code': new_code, "assertation": "\n" + assertion + "\n"}
-        inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
-        inserted_code = inserted_code.get("p_insert_invariant_from_clangindex", None)
-
-        if inserted_code is None:
-            return {"new_code": None}
-
-        return {"new_code": inserted_code}
-
-    def esbmc_verifier_with_k_induction(source_code, property="unreach-call", timeout=5):
-        assert property in ["unreach-call", "termination"]
-        data = {'source_code': source_code, "timeout": timeout}
-        return request_auto(payload=data, target_path="esbmc_verifier_with_k_induction", timeout=timeout)
-
-    assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
-    raw_source_code = kwargs["source_code"]
-    raw_idx = kwargs["idx"]
-
-    new_completions = list(zip(raw_source_code, assert_snippets, raw_idx))
-
-    completion_contents = []
-
-    with ThreadPoolExecutor() as executor:
-        # Use executor.map to process new_completions in order
-        rewrite_results = executor.map(lambda x: rewrite_content(x[0], x[1], x[2]), new_completions)
-
-        for rewrite_result in rewrite_results:
-            new_content = rewrite_result.get('new_code', None)
-
-            if new_content is not None:
-                esbmc_verifier_result_rewrite = esbmc_verifier_with_k_induction(new_content, property=kwargs.get("property", "unreach-call"))
-                status = esbmc_verifier_result_rewrite["status"] if esbmc_verifier_result_rewrite is not None else 2
-            else:
-                status = 2
-
-            if status == 1:
-                flg = 1
-            else:
-                flg = 0
-
-            completion_contents.append(float(flg))
-
-    return completion_contents
-
-
-
-def reward_asserty_verify_with_z3(completions, **kwargs):
-    assert "smt_code" in kwargs
-    do_print  = random.randint(0,64)==1
-
-    def _z3_verify(smt_code, assertion,idx):
-        if "assert" not in assertion.lower():
-            return None
-        
-        data = {'source_code': smt_code, "assertation": assertion}
-        return  request_auto(payload=data, target_path="smt_verify")
-
-    assert_snippets = [extract_asserts(completion[-1]["content"]) for completion in completions]
-    raw_source_code = kwargs["smt_code"]
-    raw_idx  = kwargs["idx"]
-
-    new_completions = list(zip(raw_source_code, assert_snippets,raw_idx))
-
-    x_fail = 0
-    x_pass = 1
-
-    with ThreadPoolExecutor() as executor:
-        # Use executor.map to process new_completions in order
-        results = executor.map(lambda x: _z3_verify(x[0], x[1],x[-1]), new_completions)
-
-        completion_contents = []
-        for rewrite_result in results:
-            if rewrite_result is None:
-                completion_contents.append(x_fail)
-            elif "smt_verify" not in rewrite_result:
-                completion_contents.append(x_fail)
-            else:
-                if do_print:
-                    print("rewrite_result", rewrite_result)
-                completion_contents.append(rewrite_result["smt_verify"]["score"])
-
-    return completion_contents
-
-def is_wired_text( completions, **kwargs ):
-    assert_snippets = [ completion[-1]["content"] for completion in completions]
-    flg_list =[ 1- int(wired_text_detect.is_wired_text( v_str ) ) for v_str in assert_snippets ] 
-    return  flg_list
-
-
-def _format_reward(solution_str: str, ground_truth=None, *argv, **kwargs) -> float:
-
-
-    def extract_think_and_answer(solution_str: str):
-        solution_str = solution_str.strip()
-        
-        # Count occurrences of the tags (case-insensitive)
-        think_open_count = len(re.findall(r"(?i)<think>", solution_str))
-        think_close_count = len(re.findall(r"(?i)</think>", solution_str))
-        answer_open_count = len(re.findall(r"(?i)<answer>", solution_str))
-        answer_close_count = len(re.findall(r"(?i)</answer>", solution_str))
-        
-        if not (think_open_count == 1 and think_close_count == 1 and 
-                answer_open_count == 1 and answer_close_count == 1):
-            return None  # or raise an error if the format is not as expected
-    
-        # Define the strict pattern for the format
-        pattern = re.compile(
-            r"^<think>\s*(.*?)\s*</think>\n*\s*<answer>\s*```(?:cpp|php|python|java|c)?\n(.*?)\n```\s*</answer>$",
-            re.DOTALL | re.IGNORECASE
-        )
-        
-        match = re.search(pattern, solution_str)
-        if match:
-            think_content = match.group(1)
-            answer_content = match.group(2)
-            
-            answer_content_str = _extract_asserts( solution_str )
-            if not answer_content_str:
-                return None 
-            return think_content , answer_content
-        return None
-
-
-    matched_t_a = extract_think_and_answer( solution_str=solution_str )    
-    return 1.0 if matched_t_a else 0.0
-
-def _extract_asserts(response_str: str):
-    """
-    Remove code block markers (```) from the response string and extract all assert statements.
-    Returns a list of assert statements found.
-    """
-    def extract_solution(solution_str: str) -> str:
-        """
-        Extract the content between <answer> and </answer> tags from the solution string.
-        If no such tags are found, returns the original (stripped) string.
-        """
-        answer_open_count = len(re.findall(r"(?i)<answer>", solution_str))
-        answer_close_count = len(re.findall(r"(?i)</answer>", solution_str))
-
-        if not (answer_open_count == 1 and answer_close_count == 1):
-            return ""  # or raise an error if the format is not as expected
-
-        answer_pattern = r"<answer>\s*```(?:cpp|php|python|java|c)?\n(.*?)\n```\s*</answer>"
-
-        matches = list(re.finditer(answer_pattern, solution_str, re.DOTALL|re.MULTILINE))
-        if matches:
-            final_answer = matches[-1].group(1).strip()
-        else:
-            final_answer  = ""
-        # print ("final_answer", final_answer)
-        return final_answer
-
-    response_str = extract_solution( response_str )
-    # Remove code block markers (```...```) from the response string
-    response_str = re.sub(
-        r'```[\s\S]*?```', 
-        lambda m: m.group(0).replace('```', ''), 
-        response_str
-    )
-
-    return  re.findall(r'assert\s*\(.*?\)\s*;', response_str, re.DOTALL)
-
-
-
-def extract_asserts(response_str: str):
-    return "\n".join( _extract_asserts(response_str) )
-
-
-
-
-
-
-
-import asyncio
-import traceback
-from functools import partial
-from concurrent.futures import ProcessPoolExecutor 
-# as ThreadPoolExecutor 
-
-async def single_compute_score(evaluation_func, completion, reference, task_extra_info, executor, timeout=300.):
-    loop = asyncio.get_running_loop()
+def run_async_from_sync(scripts: list[str], language: str) -> list[float]:
+    """Function wrapping the `run_async` function."""
+    # Create a new event loop and set it
     try:
-        task = asyncio.wait_for(
-            loop.run_in_executor(
-                executor,
-                partial(evaluation_func, completion, reference, task_extra_info)
-            ),
-            timeout=timeout
-        )
-        return await asyncio.gather(task)
-    except asyncio.TimeoutError:
-        traceback.print_exc()
-        print(f"Timeout occurred for completion: {completion}")
-        return None
+        # Run the async function and get the result
+        rewards = asyncio.run(run_async(scripts, language))
     except Exception as e:
-        traceback.print_exc()
-        print(f"Error processing completion: {completion[:10]}, Error: {e}")
-        return None
+        print(f"Error from E2B executor async: {e}")
+        raise e
+
+    return rewards
 
 
+async def run_async(scripts: list[str], language: str) -> list[float]:
+    # Create the sandbox by hand, currently there's no context manager for this version
+    sbx = await AsyncSandbox.create(timeout=30, request_timeout=3)
 
-async def parallel_compute_score_async(evaluation_func, completions, references, extra_info=None, num_threads=64):
-    scores = []
-    with ProcessPoolExecutor(max_workers=num_threads) as executor:
-        if extra_info is None:
-            extra_info = [None] * len(completions)
-        tasks_async = [
-            single_compute_score(evaluation_func, comp, ref, info, executor, timeout=300.)
-            for comp, ref, info in zip(completions, references, extra_info)
-        ]
-        try:
-            results = await asyncio.gather(*tasks_async, return_exceptions=False)
-        except Exception:
-            traceback.print_exc()
-            raise
+    # Create a list of tasks for running scripts concurrently
+    tasks = [run_script(sbx, script, language) for script in scripts]
 
-    for result, comp, ref in zip(results, completions, references):
-        if result is None or isinstance(result, Exception):
-            scores.append(0.0)
-        elif isinstance(result[0], (int, float, bool)):
-            scores.append(float(result[0]))
-        else:
-            scores.append(float(result[0][0]))
-    return scores
+    # Wait for all tasks to complete and gather their results as they finish
+    results = await asyncio.gather(*tasks)
+    rewards = list(results)  # collect results
+
+    # Kill the sandbox after all the tasks are complete
+    await sbx.kill()
+
+    return rewards
 
 
-
-
-def _process_with_inputx_outputy(function_name, sequences_str, ground_truth=None):
-    if ground_truth is None:
-        ground_truth = [None] * len(sequences_str)
-    assert len(sequences_str) == len(ground_truth)
+async def run_script(sbx: AsyncSandbox, script: str, language: str) -> float:
+    execution = await sbx.run_code(script, language=language)
     try:
-        scores = asyncio.run(
-            parallel_compute_score_async(function_name, sequences_str, ground_truth, num_threads=64)
-        )
-    except asyncio.TimeoutError:
-        traceback.print_exc()
-        print('Global timeout in reward computing! Setting all as 0.')
-        scores = [0.0 for _ in range(len(sequences_str))]
-    except Exception as e:
-        traceback.print_exc()
-        print(f"Unexpected error in batched reward computing. Setting all as 0.: {e}")
-        scores = [0.0 for _ in range(len(sequences_str))]
-    return scores
+        return float(execution.text)
+    except (TypeError, ValueError):
+        return 0.0
 
 
-def reward_asserty_verify_with_z3_counterexample_local(completions, **kwargs):
-    assert "smt_code" in kwargs, "smt_code is required"
-    smt_code = kwargs["smt_code"]
-    s_code = kwargs.get("source_code", [None] * len(completions))
-    ground_truth = [{"smt_code": x, "source_code": y} for x, y in zip(smt_code, s_code)]
-    solution_list = [comp[0]["content"] for comp in completions]
-    solution_list = [extract_asserts(s) for s in solution_list]
-    return _process_with_inputx_outputy(
-        _imp_asserty_verify_with_z3_counterexample,
-        sequences_str=solution_list,
-        ground_truth=ground_truth
-    )
+def get_reward_funcs(script_args) -> list[Callable]:
+    print( "--script_args", type(script_args), script_args ) 
+    REWARD_FUNCS_REGISTRY = {
+        "accuracy": accuracy_reward,
+        "format": format_reward,
+        "reasoning_steps": reasoning_steps_reward,
+        "cosine": get_cosine_scaled_reward(
+            min_value_wrong=script_args.cosine_min_value_wrong,
+            max_value_wrong=script_args.cosine_max_value_wrong,
+            min_value_correct=script_args.cosine_min_value_correct,
+            max_value_correct=script_args.cosine_max_value_correct,
+            max_len=script_args.cosine_max_len,
+        ),
+        "repetition_penalty": get_repetition_penalty_reward(
+            ngram_size=script_args.repetition_n_grams,
+            max_penalty=script_args.repetition_max_penalty,
+        ),
+        "length": len_reward,
+        "code": code_reward,
+        "binary_code": binary_code_reward,
+        "ioi_code": update_wrapper(
+            partial(ioi_code_reward, test_batch_size=script_args.code_eval_test_batch_size), ioi_code_reward
+        ),
+        "code_format": get_code_format_reward(language=script_args.code_language),
+        "tag_count": tag_count_reward,
+    }
+    # reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]
+    #
+    # return reward_funcs
+    return REWARD_FUNCS_REGISTRY 

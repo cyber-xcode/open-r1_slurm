@@ -15,7 +15,6 @@
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
 
 import datasets
 import torch
@@ -24,112 +23,75 @@ from datasets import load_dataset
 from transformers import set_seed
 from transformers.trainer_utils import get_last_checkpoint
 
-from open_r1.configs import GRPOConfig
-from open_r1.rewards import (
-    # accuracy_reward,
-    # code_reward,
-    format_reward,
-    get_code_format_reward,
-    # get_cosine_scaled_reward,
-    get_repetition_penalty_reward,
-    # len_reward,
-    reasoning_steps_reward,
-    tag_count_reward,
-    is_wired_text,
-)
+import random 
 
-from open_r1.rewards import (
-    reward_remote_check_syntax,
-    reward_remote_check_is_loop,
-    reward_remote_is_loop_invariant_format,
-    reward_remote_check_has_post_condition,
-    reward_remote_check_is_cheating,
-    reward_remote_verify,
-    
-    reward_asserty_p_check_assert_syntax,
-    reward_asserty_p_is_cheating,
-    reward_asserty_verify, 
-    
-    reward_asserty_verify_with_esbmc,
-    reward_asserty_verify_with_z3, 
-
-    reward_asserty_verify_with_z3_counterexample_local, 
-)
-
+from open_r1.configs import GRPOConfig, GRPOScriptArguments
+from open_r1.rewards import get_reward_funcs
+from open_r1.rewards_seformal import get_reward_funcs as get_reward_funcs_formal
+from open_r1.rewards_seformal import remove_comments_and_docstrings 
 
 from open_r1.utils import get_tokenizer
 from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
-from trl import GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_config
+from trl import GRPOTrainer, ModelConfig, TrlParser, get_peft_config
 
 
 logger = logging.getLogger(__name__)
 
+system_prompt: "You are a helpful assistant. You first thinks about the reasoning process in the mind and then provides the user with the answer. Show your work in <think> </think> tags. And return the final answer in <answer> </answer> tags, for example <answer> assert( x+1 ==2 ); </answer>"
 
-@dataclass
-class GRPOScriptArguments(ScriptArguments):
+
+def build_prompt(item, prompt_type=1  ):
+    if prompt_type==1:
+        promot= """
+Given a snippet of C source code, synthesize a loop invariant that is both necessary and sufficient.  
+**Requirements:**  
+1. Express the invariant as a C assertion.  
+2. Do not include any explanation or additional commentary in your <answer>; output only the invariant.  
+
+**Example:**
+<think>
+(your reasoning process as an internal monologue )
+</think>
+<answer>
+```c
+assert(x <= 1);
+```
+</answer>
+
+=========
+Now you are given this code, what is you answer to the invariant. 
+```
+{{code}}
+```
+<think>
     """
-    Script arguments for the GRPO training script.
+    else:
+        promot= """
+Given a snippet of C source code, synthesize a loop invariant that is both necessary and sufficient.  
+**Requirements:**  
+1. Express the invariant as a C assertion.  
+2. Do not include any explanation or additional commentary in your <answer>; output only the invariant.  
 
-    Args:
-        reward_funcs (`list[str]`):
-            List of reward functions. Possible values: 'accuracy', 'format', 'format_deepseek', 'reasoning_steps', 'cosine', 'repetition_penalty', 'length', tag_count', 'code', 'code_format'.
-        cosine_min_value_wrong (`float`):
-            Minimum reward for cosine scaling for wrong answers.
-        cosine_max_value_wrong (`float`):
-            Maximum reward for cosine scaling for wrong answers.
-        cosine_min_value_correct (`float`):
-            Minimum reward for cosine scaling for correct answers.
-        cosine_max_value_correct (`float`):
-            Maximum reward for cosine scaling for correct answers.
-        cosine_max_len (`int`):
-            Maximum length for cosine scaling.
-        code_language (`str`):
-            Language for code format reward.
+**Example:**
+<answer>
+```c
+assert(x <= 1);
+```
+</answer>
+
+=========
+Now you are given this code, what is you answer to the invariant. 
+```
+{{code}}
+```
+<think>
     """
-
-    reward_funcs: list[str] = field(
-        default_factory=lambda: [ "format", "tag_count"],
-        metadata={
-            "help": "List of reward functions. Possible values: 'accuracy', 'format', 'format_deepseek', 'reasoning_steps', 'cosine', 'repetition_penalty', 'length', tag_count', 'code', 'code_format'"
-        },
-    )
-    cosine_min_value_wrong: float = field(
-        default=0.0,
-        metadata={"help": "Minimum reward for wrong answers"},
-    )
-    cosine_max_value_wrong: float = field(
-        default=-0.5,
-        metadata={"help": "Maximum reward for wrong answers"},
-    )
-    cosine_min_value_correct: float = field(
-        default=0.5,
-        metadata={"help": "Minimum reward for correct answers"},
-    )
-    cosine_max_value_correct: float = field(
-        default=1.0,
-        metadata={"help": "Maximum reward for correct answers"},
-    )
-    cosine_max_len: int = field(
-        default=1000,
-        metadata={"help": "Maximum length for scaling"},
-    )
-    repetition_n_grams: int = field(
-        default=3,
-        metadata={"help": "Number of n-grams for repetition penalty reward"},
-    )
-    repetition_max_penalty: float = field(
-        default=-1.0,
-        metadata={"help": "Maximum (negative) penalty for for repetition penalty reward"},
-    )
-    code_language: str = field(
-        default="c",
-        metadata={
-            "help": "Language for code format reward. Based on E2B supported languages https://e2b.dev/docs/code-interpreting/supported-languages",
-            "choices": ["python", "javascript", "r", "java", "bash"],
-        },
-    )
-
+    source_code = item["source_code"]
+    is_remve_comment = random.randint(0,2)==1
+    if is_remve_comment :
+        source_code = remove_comments_and_docstrings(source_code )
+    return promot.replace("{{code}}",source_code )
 
 def main(script_args, training_args, model_args):
     # Set seed for reproducibility
@@ -170,6 +132,7 @@ def main(script_args, training_args, model_args):
         init_wandb_training(training_args)
 
     # Load the dataset
+    # dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
     if type(script_args.dataset_name) ==dict or  script_args.dataset_name.endswith(".jsonl"):
         dataset = load_dataset("json", data_files=script_args.dataset_name )
     else:
@@ -180,56 +143,21 @@ def main(script_args, training_args, model_args):
     ################
     tokenizer = get_tokenizer(model_args, training_args)
 
-    # Get reward functions
-    REWARD_FUNCS_REGISTRY = {
-        "reward_remote_check_syntax": reward_remote_check_syntax,
-        "reward_remote_check_is_loop": reward_remote_check_is_loop,
-        "reward_remote_is_loop_invariant_format": reward_remote_is_loop_invariant_format,
-        "reward_remote_check_has_post_condition": reward_remote_check_has_post_condition,
-        "reward_remote_check_is_cheating": reward_remote_check_is_cheating,
-        "reward_remote_verify": reward_remote_verify,
-
-
+    # Get reward functions from the registry
+    reward_funcs_dict = get_reward_funcs(script_args)
+    reward_funcs_dict .update( get_reward_funcs_formal() )
     
-    "reward_asserty_p_check_assert_syntax":reward_asserty_p_check_assert_syntax, 
-    "reward_asserty_p_is_cheating":reward_asserty_p_is_cheating,
-    "reward_asserty_verify":reward_asserty_verify,
-
-"reward_asserty_verify_with_esbmc":reward_asserty_verify_with_esbmc,
-"reward_asserty_verify_with_z3":reward_asserty_verify_with_z3,
-    
-   "reward_asserty_verify_with_z3_counterexample_local" :reward_asserty_verify_with_z3_counterexample_local,
+    reward_funcs =  [reward_funcs_dict[x] for x in script_args.reward_funcs ]
     
     
-        "format": format_reward,
-        "reasoning_steps": reasoning_steps_reward,
-        # "cosine": get_cosine_scaled_reward(
-        #     min_value_wrong=script_args.cosine_min_value_wrong,
-        #     max_value_wrong=script_args.cosine_max_value_wrong,
-        #     min_value_correct=script_args.cosine_min_value_correct,
-        #     max_value_correct=script_args.cosine_max_value_correct,
-        #     max_len=script_args.cosine_max_len,
-        # ),
-        "repetition_penalty": get_repetition_penalty_reward(
-            ngram_size=script_args.repetition_n_grams,
-            max_penalty=script_args.repetition_max_penalty,
-        ),
-        # "length": len_reward,
-        "code_format": get_code_format_reward(),
-        "is_wired_text":is_wired_text,
-        "tag_count": tag_count_reward,
-    }
-    reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]
-
     # Format into conversation
     def make_conversation(example):
         prompt = []
 
         if training_args.system_prompt is not None:
             prompt.append({"role": "system", "content": training_args.system_prompt})
-        pr= example["problem"].replace("Don't explain.","")
 
-        prompt.append({"role": "user", "content": pr })
+        prompt.append({"role": "user", "content": build_prompt(example,prompt_type=script_args.prompt_type) } )
         return {"prompt": prompt}
 
     dataset = dataset.map(make_conversation)
@@ -237,6 +165,10 @@ def main(script_args, training_args, model_args):
     for split in dataset:
         if "messages" in dataset[split].column_names:
             dataset[split] = dataset[split].remove_columns("messages")
+        for col in dataset[split].column_names:
+            if col not in  ["source_code" ,"smt_code", "prompt" ]:
+                dataset[split] = dataset[split].remove_columns( col )
+                
 
     logger.info("*** Initializing model kwargs ***")
     torch_dtype = (
@@ -247,8 +179,7 @@ def main(script_args, training_args, model_args):
         trust_remote_code=model_args.trust_remote_code,
         attn_implementation=model_args.attn_implementation,
         torch_dtype=torch_dtype,
-#        use_cache=False if training_args.gradient_checkpointing else True,
-        use_cache = False ,
+        use_cache=False if training_args.gradient_checkpointing else True,
     )
     training_args.model_init_kwargs = model_kwargs
 
@@ -265,7 +196,61 @@ def main(script_args, training_args, model_args):
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
     )
-
+    #
+    # ###############
+    # # Training loop
+    # ###############
+    # logger.info("*** Train ***")
+    # checkpoint = None
+    # if training_args.resume_from_checkpoint is not None:
+    #     checkpoint = training_args.resume_from_checkpoint
+    # elif last_checkpoint is not None:
+    #     checkpoint = last_checkpoint
+    # train_result = trainer.train(resume_from_checkpoint=checkpoint)
+    # metrics = train_result.metrics
+    # metrics["train_samples"] = len(dataset[script_args.dataset_train_split])
+    # trainer.log_metrics("train", metrics)
+    # trainer.save_metrics("train", metrics)
+    # trainer.save_state()
+    #
+    # ##################################
+    # # Save model and create model card
+    # ##################################
+    # logger.info("*** Save model ***")
+    # trainer.save_model(training_args.output_dir)
+    # logger.info(f"Model saved to {training_args.output_dir}")
+    #
+    #
+    # ##########
+    # # Evaluate
+    # ##########
+    # if training_args.do_eval:
+    #     logger.info("*** Evaluate ***")
+    #     metrics = trainer.evaluate()
+    #     metrics["eval_samples"] = len(dataset[script_args.dataset_test_split])
+    #     trainer.log_metrics("eval", metrics)
+    #     trainer.save_metrics("eval", metrics)
+    #
+    # # #############
+    # # # push to hub
+    # # #############
+    # # # Save everything else on main process
+    # # kwargs = {
+    # #     "dataset_name": script_args.dataset_name,
+    # #     "tags": ["open-r1"],
+    # # }
+    # # if trainer.accelerator.is_main_process:
+    # #     trainer.create_model_card(**kwargs)
+    # #     # Restore k,v cache for fast inference
+    # #     trainer.model.config.use_cache = True
+    # #     trainer.model.config.save_pretrained(training_args.output_dir)
+    # #
+    # #
+    # # if training_args.push_to_hub:
+    # #     logger.info("Pushing to hub...")
+    # #     trainer.push_to_hub(**kwargs)
+    
+    
     ###############
     # Training loop
     ###############
@@ -318,7 +303,11 @@ def main(script_args, training_args, model_args):
         trainer.push_to_hub(**kwargs)
 
 
+
+
+
 if __name__ == "__main__":
     parser = TrlParser((GRPOScriptArguments, GRPOConfig, ModelConfig))
     script_args, training_args, model_args = parser.parse_args_and_config()
+    print (script_args)
     main(script_args, training_args, model_args)

@@ -85,7 +85,7 @@ Now you are given this code, what is you answer to the invariant.
 ```
 {{code}}
 ```
-<think>
+<answer>
     """
     source_code = item["source_code"]
     is_remve_comment = random.randint(0,2)==1

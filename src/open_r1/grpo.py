@@ -166,7 +166,7 @@ def main(script_args, training_args, model_args):
         if "messages" in dataset[split].column_names:
             dataset[split] = dataset[split].remove_columns("messages")
         for col in dataset[split].column_names:
-            if col not in  ["source_code" ,"smt_code", "prompt" ]:
+            if col not in  ["source_code" ,"smt_code", "prompt" ,"idx"]:
                 dataset[split] = dataset[split].remove_columns( col )
                 
 

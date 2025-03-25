@@ -459,7 +459,7 @@ def reward_asserty_verify_with_z3(completions, **kwargs):
         if "assert" not in assertion.lower():
             return None
         
-        data = {'source_code': smt_code, "assertation": assertion}
+        data = {'source_code': smt_code, "assertation": assertion,"idx":idx}
         return  request_auto(payload=data, target_path="smt_verify")
 
     assert_snippets = [extract_asserts(completion[-1]["content"]) for completion in completions]
@@ -677,11 +677,11 @@ def reward_asserty_verify_with_z3_v2(completions, **kwargs):
     assert "smt_code" in kwargs
     do_print  = random.randint(0,64)==1
 
-    def _z3_verify(smt_code, assertion,one_completeion ):
+    def _z3_verify(smt_code, assertion,one_completeion, idx ):
         if "assert" not in assertion.lower():
             return None
         
-        data = {'source_code': smt_code, "assertation": assertion}
+        data = {'source_code': smt_code, "assertation": assertion,"idx":idx}
         rewrite_result =   request_auto(payload=data, target_path="smt_verify")
         if do_print and rewrite_result :
             print(json.dumps({** rewrite_result,"assertion": assertion,"one_completeion":one_completeion}  ) )
@@ -689,16 +689,16 @@ def reward_asserty_verify_with_z3_v2(completions, **kwargs):
 
     assert_snippets = [extract_code_old(completion[-1]["content"]) for completion in completions]
     raw_source_code = kwargs["smt_code"]
-    # raw_idx  = kwargs["idx"]
+    raw_idx  = kwargs["idx"]
 
-    new_completions = list(zip(raw_source_code, assert_snippets,completions))
+    new_completions = list(zip(raw_source_code, assert_snippets,completions,raw_idx ))
 
     x_fail = 0
     x_pass = 1
 
     with ThreadPoolExecutor() as executor:
         # Use executor.map to process new_completions in order
-        results = executor.map(lambda x: _z3_verify(x[0], x[1],x[-1]), new_completions)
+        results = executor.map(lambda x: _z3_verify(x[0], x[1],x[2],x[-1]), new_completions)
 
         completion_contents = []
         for rewrite_result in results:

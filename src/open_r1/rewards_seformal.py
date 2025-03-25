@@ -54,7 +54,7 @@ def find_code_blocks(completion: str) -> str:
 
 
 
-def request_auto(payload, target_path="", timeout=30):
+def request_auto(payload, target_path="", timeout=10):
     url = os.path.join(BASE_URL, target_path)
     try:
         response = requests.post(url, json=payload, timeout=timeout )

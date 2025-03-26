@@ -66,6 +66,29 @@ Now you are given this code, what is you answer to the invariant.
 ```
 <think>
     """
+    elif prompt_type==3:
+        promot= """
+Given a snippet of C source code, synthesize a loop invariant that is both necessary and sufficient.  
+**Requirements:**  
+1. Express the invariant as a C assertion.  
+2. Do not include any explanation or additional commentary in your <answer>; output only the invariant.  
+
+**Example:**
+<think>
+....
+</think>
+<answer>
+```c
+assert(x <= 1);
+```
+</answer>
+
+=========
+Now you are given this code, what is you answer to the invariant. 
+```
+{{code}}
+```
+    """
     else:
         promot= """
 Given a snippet of C source code, synthesize a loop invariant that is both necessary and sufficient.  

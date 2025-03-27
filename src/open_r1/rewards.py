@@ -71,7 +71,7 @@ def accuracy_reward(completions, solution, **kwargs):
 
 def format_reward(completions, **kwargs):
     """Reward function that checks if the reasoning process is enclosed within <think> and </think> tags, while the final answer is enclosed within <answer> and </answer> tags."""
-    pattern = r"^<think>\n.*?\n</think>\n<answer>\n.*?\n</answer>$"
+    pattern = r"^<think>\n.*?\n</think>\s*<answer>\n.*?\n</answer>$"
     completion_contents = [completion[0]["content"] for completion in completions]
     matches = [re.match(pattern, content, re.DOTALL | re.MULTILINE) for content in completion_contents]
     return [1.0 if match else 0.0 for match in matches]
@@ -447,20 +447,6 @@ def code_reward(completions, **kwargs) -> list[float]:
     return rewards
 
 
-# def get_code_format_reward(language: str = "c"):
-#     """Format reward function specifically for code responses.
-#
-#     Args:
-#         language: Programming language supported by E2B https://e2b.dev/docs/code-interpreting/supported-languages
-#     """
-#     pattern = rf"^<think>\n.*?\n</think>\n<answer>\n.*?```{language}.*?```.*?\n</answer>$"
-#
-#     def code_format_reward(completions, **kwargs):
-#         completion_contents = [completion[0]["content"] for completion in completions]
-#         matches = [re.match(pattern, content, re.DOTALL | re.MULTILINE) for content in completion_contents]
-#         return [1.0 if match else 0.0 for match in matches]
-#
-#     return code_format_reward
 
 def get_code_format_reward(language: str = "c"):
     """Format reward function specifically for code responses.
@@ -468,8 +454,7 @@ def get_code_format_reward(language: str = "c"):
     Args:
         language: Programming language supported by E2B https://e2b.dev/docs/code-interpreting/supported-languages
     """
-    pattern =r"^<think>\s*(.*?)\s*</think>\n*\s*<answer>\s*```(?:cpp|php|python|java|c)?\n(.*?)\n```\s*</answer>$",
-
+    pattern =r"^<think>\s*(.*?)\s*</think>\n*\s*<answer>\s*```(?:cpp|php|python|java|c)?\n(.*?)\n```\s*</answer>$"
 
     def code_format_reward(completions, **kwargs):
         completion_contents = [completion[0]["content"] for completion in completions]
@@ -477,6 +462,7 @@ def get_code_format_reward(language: str = "c"):
         return [1.0 if match else 0.0 for match in matches]
 
     return code_format_reward
+
 
 
 

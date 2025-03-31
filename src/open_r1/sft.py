@@ -221,7 +221,8 @@ def main(script_args, training_args, model_args):
     # Load tokenizer
     ################
     tokenizer = get_tokenizer(model_args, training_args)
-    tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     ###################
     # Model init kwargs
@@ -285,26 +286,26 @@ def main(script_args, training_args, model_args):
     }
     if trainer.accelerator.is_main_process:
         trainer.create_model_card(**kwargs)
-        # Restore k,v cache for fast inference
+    #    # Restore k,v cache for fast inference
         trainer.model.config.use_cache = True
         trainer.model.config.save_pretrained(training_args.output_dir)
 
     ##########
     # Evaluate
     ##########
-    if training_args.do_eval:
-        logger.info("*** Evaluate ***")
-        metrics = trainer.evaluate()
-        metrics["eval_samples"] = len(dataset[script_args.dataset_test_split])
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+    #if training_args.do_eval:
+    #    logger.info("*** Evaluate ***")
+    #    metrics = trainer.evaluate()
+    #    metrics["eval_samples"] = len(dataset[script_args.dataset_test_split])
+    #    trainer.log_metrics("eval", metrics)
+    #    trainer.save_metrics("eval", metrics)
 
     #############
     # push to hub
     #############
-    if training_args.push_to_hub:
-        logger.info("Pushing to hub...")
-        trainer.push_to_hub(**kwargs)
+    #if training_args.push_to_hub:
+    #    logger.info("Pushing to hub...")
+    #    trainer.push_to_hub(**kwargs)
 
 
 if __name__ == "__main__":

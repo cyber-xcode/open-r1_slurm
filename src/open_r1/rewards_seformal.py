@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import re 
 
-from .se_formal import _imp_asserty_verify_with_z3_counterexample
+#from .se_formal import _imp_asserty_verify_with_z3_counterexample
 
 
 logger = logging.getLogger(__file__)

@@ -211,7 +211,7 @@ def main(script_args, training_args, model_args):
             if col not in  ["source_code" ,"response" ]:
                 dataset[split] = dataset[split].remove_columns( col )
     dataset = dataset.map(make_conversation)
-    df_preview = pd.DataFrame(dataset['train']["messages"][:5])
+    df_preview = pd.DataFrame(dataset['train']["messages"][:1])
     logger.info("*** Top 5 rows of the dataset ***\n%s", df_preview.to_string(index=False))
 
 

@@ -38,6 +38,7 @@ accelerate launch --config_file=recipes/accelerate_configs/zero3.yaml src/open_r
 import logging
 import os
 import sys
+import random
 
 import datasets
 import torch
@@ -46,7 +47,8 @@ from datasets import load_dataset
 from transformers import set_seed
 from transformers.trainer_utils import get_last_checkpoint
 
-from open_r1.configs import SFTConfig
+from open_r1.configs import SFTConfig , SFTScriptArguments 
+
 from open_r1.utils import get_tokenizer
 from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
@@ -61,7 +63,93 @@ from trl import (
 )
 
 
+from open_r1.rewards_seformal import remove_comments_and_docstrings 
+import pandas as pd
+
+
+
 logger = logging.getLogger(__name__)
+
+system_prompt: "You are a helpful assistant. You first thinks about the reasoning process in the mind and then provides the user with the answer. Show your work in <think> </think> tags. And return the final answer in <answer> </answer> tags, for example <answer> assert( x+1 ==2 ); </answer>"
+
+
+def build_prompt(item, prompt_type=1  ):
+    if prompt_type==1:
+        promot= """
+Given a snippet of C source code, synthesize a loop invariant that is both necessary and sufficient.  
+**Requirements:**  
+1. Express the invariant as a C assertion.  
+2. Do not include any explanation or additional commentary in your <answer>; output only the invariant.  
+
+**Example:**
+<think>
+(your reasoning process as an internal monologue )
+</think>
+<answer>
+```c
+assert(x <= 1);
+```
+</answer>
+
+=========
+Now you are given this code, what is you answer to the invariant. 
+```
+{{code}}
+```
+<think>
+    """
+    elif prompt_type==3:
+        promot= """
+Given a snippet of C source code, synthesize a loop invariant that is both necessary and sufficient.  
+**Requirements:**  
+1. Express the invariant as a C assertion.  
+2. Do not include any explanation or additional commentary in your <answer>; output only the invariant.  
+
+**Example:**
+<think>
+....
+</think>
+<answer>
+```c
+assert(x <= 1);
+```
+</answer>
+
+=========
+Now you are given this code, what is you answer to the invariant. 
+```
+{{code}}
+```
+    """
+    else:
+        promot= """
+Given a snippet of C source code, synthesize a loop invariant that is both necessary and sufficient.  
+**Requirements:**  
+1. Express the invariant as a C assertion.  
+2. Do not include any explanation or additional commentary in your <answer>; output only the invariant.  
+
+**Example:**
+<answer>
+```c
+assert(x <= 1);
+```
+</answer>
+
+=========
+Now you are given this code, what is you answer to the invariant. 
+```
+{{code}}
+```
+<answer>
+    """
+    source_code = item["source_code"]
+    is_remve_comment = random.randint(0,2)==1
+    if is_remve_comment :
+        source_code = remove_comments_and_docstrings(source_code )
+    x_promot =  promot.replace("{{code}}",source_code )
+    return x_promot 
+    #return [{"role":"user","content":x_promot, } , {"role":"assistant","content":item["response"]}]
+
 
 
 def main(script_args, training_args, model_args):
@@ -78,7 +166,8 @@ def main(script_args, training_args, model_args):
     )
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
-    datasets.utils.logging.set_verbosity(log_level)
+    #datasets.utils.logging.set_verbosity(log_level)
+    datasets.utils.logging.set_verbosity_error()#set_verbosity(log_level)
     transformers.utils.logging.set_verbosity(log_level)
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
@@ -100,13 +189,40 @@ def main(script_args, training_args, model_args):
     ################
     # Load datasets
     ################
-    dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
+    if type(script_args.dataset_name) ==dict or  script_args.dataset_name.endswith(".jsonl"):
+        dataset = load_dataset("json", data_files=script_args.dataset_name )
+    else:
+        dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
+    def make_conversation(example):
+        prompt = []
+
+        if training_args.system_prompt is not None:
+            prompt.append({"role": "system", "content": training_args.system_prompt})
+
+        prompt.append({"role": "user", "content": build_prompt(example,prompt_type=script_args.prompt_type) } )
+        prompt.append({"role": "assistant", "content" :example["response"] } )
+        return {"messages": prompt}
+
+
+    for split in dataset:
+        if "messages" in dataset[split].column_names:
+            dataset[split] = dataset[split].remove_columns("messages")
+        for col in dataset[split].column_names:
+            if col not in  ["source_code" ,"response" ]:
+                dataset[split] = dataset[split].remove_columns( col )
+    dataset = dataset.map(make_conversation)
+    df_preview = pd.DataFrame(dataset['train']["messages"][:1])
+    logger.info("*** Top 5 rows of the dataset ***\n%s", df_preview.to_string(index=False))
+
+
+    #dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
 
     ################
     # Load tokenizer
     ################
     tokenizer = get_tokenizer(model_args, training_args)
-    tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     ###################
     # Model init kwargs
@@ -170,29 +286,30 @@ def main(script_args, training_args, model_args):
     }
     if trainer.accelerator.is_main_process:
         trainer.create_model_card(**kwargs)
-        # Restore k,v cache for fast inference
+    #    # Restore k,v cache for fast inference
         trainer.model.config.use_cache = True
         trainer.model.config.save_pretrained(training_args.output_dir)
 
     ##########
     # Evaluate
     ##########
-    if training_args.do_eval:
-        logger.info("*** Evaluate ***")
-        metrics = trainer.evaluate()
-        metrics["eval_samples"] = len(dataset[script_args.dataset_test_split])
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+    #if training_args.do_eval:
+    #    logger.info("*** Evaluate ***")
+    #    metrics = trainer.evaluate()
+    #    metrics["eval_samples"] = len(dataset[script_args.dataset_test_split])
+    #    trainer.log_metrics("eval", metrics)
+    #    trainer.save_metrics("eval", metrics)
 
     #############
     # push to hub
     #############
-    if training_args.push_to_hub:
-        logger.info("Pushing to hub...")
-        trainer.push_to_hub(**kwargs)
+    #if training_args.push_to_hub:
+    #    logger.info("Pushing to hub...")
+    #    trainer.push_to_hub(**kwargs)
 
 
 if __name__ == "__main__":
-    parser = TrlParser((ScriptArguments, SFTConfig, ModelConfig))
+    #parser = TrlParser((ScriptArguments, SFTConfig, ModelConfig))
+    parser = TrlParser(( SFTScriptArguments , SFTConfig, ModelConfig))
     script_args, training_args, model_args = parser.parse_args_and_config()
     main(script_args, training_args, model_args)

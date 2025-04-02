@@ -162,3 +162,12 @@ class GRPOScriptArguments(trl.ScriptArguments):
         },
     )
     
+@dataclass
+class SFTScriptArguments(trl.ScriptArguments):
+    prompt_type: int = field(
+                    default=1,
+                            metadata={
+                                            "help": "for each generation, evaluate these many test cases in parallel, then check if any of them failed (0 score): if so stop evaluating; otherwise continue with the next batch of test cases. Useful to avoid overloading the eval server + save time on wrong solutions"
+                                                    },
+                                )
+        

@@ -6,7 +6,6 @@
 #SBATCH --qos=research-1-qos
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=32
-#SBATCH --constraint=a40
 #SBATCH --output=./logs/%x_%j.out
 #SBATCH --error=./logs/%x_%j.err
 #SBATCH --gres-flags=enforce-binding
@@ -28,12 +27,16 @@ echo "HF_TOKEN..."$HF_TOKEN
 echo "WANDB_API_KEY..."$WANDB_API_KEY
 
 
+export rootdir="/common/home/users/j/jwang/"
 export workhome="/common/home/users/j/jwang/scratchDirectory/wj_code/dl_loop"
 mkdir -p $workhome
 cd $workhome
 
-mkdir -p /tmp/datasets_json
-ln -s /tmp/datasets_json  /common/home/users/j/jwang/.cache/huggingface/datasets/json
+mkdir -p "$rootdir/tmp_dir_json"
+
+if [[ ! -d "$HOME/.cache/huggingface/datasets/json" ]]; then 
+	ln -s  "$rootdir/tmp_dir_json"  "$HOME/.cache/huggingface/datasets/json"
+fi	
 
 
 set -x -e
@@ -44,15 +47,15 @@ source ~/.bashrc
 export CUDA_HOME=/opt/apps/software/CUDA/12.6.0/
 
 
-if [ ! -d "${workhome}/open-r1" ]; then 
-        git clone https://github.com/huggingface/open-r1 
-fi 
+#if [ ! -d "${workhome}/open-r1" ]; then 
+#        git clone https://github.com/huggingface/open-r1 
+#fi 
 
 cd  "./open-r1_formal" 
-if [ ! -d   "${hostname}_openr1"  ]; then 
-        uv venv "${hostname}_openr1" --python 3.11 
+if [ ! -d   "$HOME/envs/${hostname}_openr1"  ]; then 
+        uv venv "$HOME/envs/${hostname}_openr1" --python 3.11 
 
-	source  "${hostname}_openr1"/bin/activate && uv pip install --upgrade pip
+	source  "$HOME/envs/${hostname}_openr1"/bin/activate && uv pip install --upgrade pip
 
 	uv pip install vllm==0.7.2 --force-reinstall 
 	uv pip install setuptools 
@@ -64,7 +67,7 @@ if [ ! -d   "${hostname}_openr1"  ]; then
 fi 
 
 
-source  "${hostname}_openr1"/bin/activate && uv pip install --upgrade pip
+source  "$HOME/envs/${hostname}_openr1"/bin/activate && uv pip install --upgrade pip
 
 
 
@@ -77,6 +80,11 @@ CONFIG_SUFFIX=$3
 ACCELERATOR=$4
 OPTIONAL_ARGS=$5
 GPUS_PER_NODE=${6:-8}
+
+MASTER_PORT=${7}
+if [ -z $MASTER_PORT ]; then 
+	MASTER_PORT=$(( ((RANDOM<<15)|RANDOM) % 63001 + 2000 ))
+fi 
 
 CONFIG_FILE=recipes/$MODEL/$TASK/config_$CONFIG_SUFFIX.yaml
 
@@ -95,7 +103,7 @@ NUM_NODES=$SLURM_NNODES
 WORLD_SIZE=$(($NUM_NODES*$GPUS_PER_NODE))
 NODELIST=($(scontrol show hostnames $SLURM_JOB_NODELIST))
 MASTER_ADDR=${NODELIST[0]}  # First node for main process
-MASTER_PORT=$(( ((RANDOM<<15)|RANDOM) % 63001 + 2000 ))
+
 
 TRAIN_NODES=("${NODELIST[@]}")
 
@@ -122,10 +130,14 @@ echo "OPTIONAL_ARGS:::"$OPTIONAL_ARGS
 
 if [[ "$MASTER_ADDR" == "candle" || \
       "$MASTER_ADDR" == "lexicon" || \
+      "$MASTER_ADDR" == "lunar" || \
       "$MASTER_ADDR" == "comet" ]]; then
   OPTIONAL_ARGS="$OPTIONAL_ARGS --ddp_backend=gloo "
 fi
 
+if [[ "$MASTER_ADDR" == "analog" ]]; then 
+  OPTIONAL_ARGS="$OPTIONAL_ARGS  --per_device_train_batch_size=4 "
+fi
 
 
 
@@ -138,11 +150,11 @@ python  -m  torch.utils.collect_env
 export NCCL_ASYNC_ERROR_HANDLING=1
 #export NCCL_DEBUG=INFO
 #export CUDA_LAUNCH_BLOCKING=1
-export TORCH_NCCL_ASYNC_ERROR_HANDLING=1 
+#export TORCH_NCCL_ASYNC_ERROR_HANDLING=1 
 
-export NCCL_DEBUG_SUBSYS=COLL
-export NCCL_SOCKET_NTHREADS=1
-export NCCL_NSOCKS_PERTHREAD=1
+#export NCCL_DEBUG_SUBSYS=COLL
+#export NCCL_SOCKET_NTHREADS=1
+#export NCCL_NSOCKS_PERTHREAD=1
 # export CUDA_LAUNCH_BLOCKING=1
 
 export CMD=" \

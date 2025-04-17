@@ -1,0 +1,51 @@
+# Model arguments
+model_name_or_path: Qwen/Qwen2.5-1.5B-Instruct
+model_revision: main
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+
+# Data training arguments
+dataset_name: 
+- data_dir/sft_feedback_6ac576bfc61346bdc3adf426483d49e8.jsonl
+- data_dir/sft_diff_directly_c6c3ed25c43c9a8dc0e6a7ab505703ae.jsonl
+prompt_type: 3
+dataset_num_proc: 48
+system_prompt: "You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>"
+
+
+# SFT trainer config
+bf16: true
+do_eval: false
+eval_strategy: 'no'
+gradient_accumulation_steps: 1
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+hub_model_id: ddpqwen1b5-4096-sft-feedback-directandfeedback_rerunep32_4096 
+hub_strategy: every_save
+learning_rate: 5.0e-05
+log_level: info
+logging_steps: 5
+logging_strategy: steps
+lr_scheduler_type: cosine_with_min_lr
+lr_scheduler_kwargs:
+  min_lr_rate: 0.1
+packing: true
+max_length: 4096
+max_steps: -1
+num_train_epochs: 32
+output_dir: data_feedback/ddpqwen1b5-4096-sft-feedback-directandfeedback_diff_rerunep32_4096
+overwrite_output_dir: true
+per_device_eval_batch_size: 16
+per_device_train_batch_size: 16
+push_to_hub: false
+report_to:
+- tensorboard
+- wandb 
+save_strategy: "steps"
+save_steps: 44
+save_total_limit: 16
+save_only_model: true
+seed: 42
+use_liger: true
+warmup_ratio: 0.05

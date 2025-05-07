@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import re 
+import socket
 
 #from .se_formal import _imp_asserty_verify_with_z3_counterexample
 
@@ -67,14 +68,22 @@ def find_code_blocks(completion: str) -> str:
 #        # logger.info(str(ex))
 #        return None
 
+hostname = socket.gethostname()
 
-BASE_URL = "http://10.0.104.167:60002/5000/"
+if "jian" in hostname:
+    BASE_URL =     "http://127.0.0.1:5000"
+    BASE_URLS = [
+        "http://127.0.0.1:5000",
+    ]
+else:
+    BASE_URL = "http://10.0.104.167:60002/5000/"
+    BASE_URLS = [
+        "http://10.0.104.167:60002/5000/",
+        "http://10.0.104.97:60002/5000/",
+    ]
 
-BASE_URLS = [
-    "http://10.0.104.167:60002/5000/",
-    "http://10.0.104.97:60002/5000/",
-]
 
+print ("hostname", hostname,"BASE_URL", BASE_URL, BASE_URLS )
 def request_auto(payload, target_path="", timeout=10):
     # Randomly select a base URL
     base_url = random.choice(BASE_URLS)
@@ -445,7 +454,8 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
         data = {'source_code': source_code, "timeout": timeout}
         return request_auto(payload=data, target_path="esbmc_verifier_with_k_induction", timeout=timeout)
 
-    assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
+    # assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
+    assert_snippets = [extract_asserts(completion[-1]["content"]) for completion in completions]
     raw_source_code = kwargs["source_code"]
     raw_idx = kwargs["idx"]
 

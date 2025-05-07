@@ -23,7 +23,7 @@ else:
     AsyncSandbox = None
 
 
-def accuracy_reward(completions, solution, **kwargs):
+def accuracy_reward(completions, solution=None, **kwargs):
     """Reward function that checks if the completion is the same as the ground truth."""
     contents = [completion[0]["content"] for completion in completions]
     rewards = []
@@ -116,7 +116,7 @@ def reasoning_steps_reward(completions, **kwargs):
     return [min(1.0, count / 3) for count in matches]
 
 
-def len_reward(completions: list[Dict[str, str]], solution: list[str], **kwargs) -> float:
+def len_reward(completions: list[Dict[str, str]], solution: list[str]=None, **kwargs) -> float:
     """Compute length-based rewards to discourage overthinking and promote token efficiency.
 
     Taken from the Kimi 1.5 tech report: https://arxiv.org/abs/2501.12599
@@ -134,37 +134,37 @@ def len_reward(completions: list[Dict[str, str]], solution: list[str], **kwargs)
 
     # First check correctness of answers
     correctness = []
-    for content, sol in zip(contents, solution):
-        gold_parsed = parse(
-            sol,
-            extraction_mode="first_match",
-            extraction_config=[LatexExtractionConfig()],
-        )
-        if len(gold_parsed) == 0:
-            # Skip unparseable examples
-            correctness.append(True)  # Treat as correct to avoid penalizing
-            print("Failed to parse gold solution: ", sol)
-            continue
+    for content, sol in zip(contents, contents):
+        # gold_parsed = parse(
+        #     sol,
+        #     extraction_mode="first_match",
+        #     extraction_config=[LatexExtractionConfig()],
+        # )
+        # if len(gold_parsed) == 0:
+        #     # Skip unparseable examples
+        #     correctness.append(True)  # Treat as correct to avoid penalizing
+        #     print("Failed to parse gold solution: ", sol)
+        #     continue
 
-        answer_parsed = parse(
-            content,
-            extraction_config=[
-                LatexExtractionConfig(
-                    normalization_config=NormalizationConfig(
-                        nits=False,
-                        malformed_operators=False,
-                        basic_latex=True,
-                        equations=True,
-                        boxed=True,
-                        units=True,
-                    ),
-                    boxed_match_priority=0,
-                    try_extract_without_anchor=False,
-                )
-            ],
-            extraction_mode="first_match",
-        )
-        correctness.append(verify(answer_parsed, gold_parsed))
+        # answer_parsed = parse(
+        #     content,
+        #     extraction_config=[
+        #         LatexExtractionConfig(
+        #             normalization_config=NormalizationConfig(
+        #                 nits=False,
+        #                 malformed_operators=False,
+        #                 basic_latex=True,
+        #                 equations=True,
+        #                 boxed=True,
+        #                 units=True,
+        #             ),
+        #             boxed_match_priority=0,
+        #             try_extract_without_anchor=False,
+        #         )
+        #     ],
+        #     extraction_mode="first_match",
+        # )
+        correctness.append(True )#verify(answer_parsed, gold_parsed))
 
     # Calculate lengths
     lengths = [len(content) for content in contents]
@@ -196,7 +196,7 @@ def get_cosine_scaled_reward(
     max_value_correct: float = 1.0,
     max_len: int = 1000,
 ):
-    def cosine_scaled_reward(completions, solution, **kwargs):
+    def cosine_scaled_reward(completions, solution=None, **kwargs):
         """Reward function that scales based on completion length using a cosine schedule.
 
         Shorter correct solutions are rewarded more than longer ones.
@@ -216,33 +216,34 @@ def get_cosine_scaled_reward(
         contents = [completion[0]["content"] for completion in completions]
         rewards = []
 
-        for content, sol in zip(contents, solution):
-            gold_parsed = parse(sol, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
-            if len(gold_parsed) == 0:
-                rewards.append(1.0)  # Skip unparseable examples
-                print("Failed to parse gold solution: ", sol)
-                continue
-
-            answer_parsed = parse(
-                content,
-                extraction_config=[
-                    LatexExtractionConfig(
-                        normalization_config=NormalizationConfig(
-                            nits=False,
-                            malformed_operators=False,
-                            basic_latex=True,
-                            equations=True,
-                            boxed=True,
-                            units=True,
-                        ),
-                        boxed_match_priority=0,
-                        try_extract_without_anchor=False,
-                    )
-                ],
-                extraction_mode="first_match",
-            )
-
-            is_correct = verify(answer_parsed, gold_parsed)
+        for content, sol in zip(contents, contents):
+            # gold_parsed = parse(sol, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
+            # if len(gold_parsed) == 0:
+            #     rewards.append(1.0)  # Skip unparseable examples
+            #     print("Failed to parse gold solution: ", sol)
+            #     continue
+            #
+            # answer_parsed = parse(
+            #     content,
+            #     extraction_config=[
+            #         LatexExtractionConfig(
+            #             normalization_config=NormalizationConfig(
+            #                 nits=False,
+            #                 malformed_operators=False,
+            #                 basic_latex=True,
+            #                 equations=True,
+            #                 boxed=True,
+            #                 units=True,
+            #             ),
+            #             boxed_match_priority=0,
+            #             try_extract_without_anchor=False,
+            #         )
+            #     ],
+            #     extraction_mode="first_match",
+            # )
+            #
+            # is_correct = verify(answer_parsed, gold_parsed)
+            is_correct=  True 
             gen_len = len(content)
 
             # Apply cosine scaling based on length

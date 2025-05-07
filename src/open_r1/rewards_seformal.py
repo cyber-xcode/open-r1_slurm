@@ -442,6 +442,8 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
 
         data = {'source_code': new_code, "assertation": "\n" + assertion + "\n"}
         inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
+        if inserted_code is None:
+            return {"new_code": None}
         inserted_code = inserted_code.get("p_insert_invariant_from_clangindex", None)
 
         if inserted_code is None:

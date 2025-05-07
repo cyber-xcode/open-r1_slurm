@@ -31,7 +31,6 @@ import re
 
 
 logger = logging.getLogger(__file__)
-BASE_URL = "http://127.0.0.1:5000"
 
 
 
@@ -54,17 +53,44 @@ def find_code_blocks(completion: str) -> str:
 
 
 
+#BASE_URL = "http://127.0.0.1:5000"
+#def request_auto(payload, target_path="", timeout=10):
+#    url = os.path.join(BASE_URL, target_path)
+#    try:
+#        response = requests.post(url, json=payload, timeout=timeout )
+#        response.raise_for_status()
+#        return response.json()
+#    except requests.exceptions.RequestException as ex:
+#        # logger.info(str(ex))
+#        return None
+#    except requests.exceptions.ReadTimeout as ex:
+#        # logger.info(str(ex))
+#        return None
+
+
+BASE_URL = "http://10.0.104.167:60002/5000/"
+
+BASE_URLS = [
+    "http://10.0.104.167:60002/5000/",
+    "http://10.0.104.97:60002/5000/",
+]
+
 def request_auto(payload, target_path="", timeout=10):
-    url = os.path.join(BASE_URL, target_path)
+    # Randomly select a base URL
+    base_url = random.choice(BASE_URLS)
+    
+    # Construct the full URL
+    url = os.path.join(base_url, target_path) if target_path else base_url
+    
     try:
-        response = requests.post(url, json=payload, timeout=timeout )
+        response = requests.post(url, json=payload, timeout=timeout)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as ex:
-        # logger.info(str(ex))
+        # logger.info(f"Request to {url} failed: {str(ex)}")
         return None
     except requests.exceptions.ReadTimeout as ex:
-        # logger.info(str(ex))
+        # logger.info(f"Request to {url} timed out: {str(ex)}")
         return None
 
 

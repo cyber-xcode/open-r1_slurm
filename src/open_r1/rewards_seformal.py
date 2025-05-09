@@ -434,10 +434,11 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
     assert "idx" in kwargs, list(kwargs)
 
     def rewrite_content(assertion, source_code, idx):
+        data = {'source_code': source_code, "idx": idx}
+        
         if "assert" not in assertion.lower():
             return {"new_code": None, **data}
 
-        data = {'source_code': source_code, "idx": idx}
         ret = request_auto(payload=data, target_path="rewrite")
         if ret is None:
             return {"new_code": None,**data}
@@ -484,11 +485,11 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
             score=  Result.Unknown.value
             if rewrite_result is not None :
                 new_content = rewrite_result.get('new_code', None)
-                # one_idx  = rewrite_result.get('idx', None)
+                one_idx  = rewrite_result.get('idx', None)
     
                 esbmc_verifier_result_rewrite=  {} 
                 if new_content is not None:
-                    esbmc_verifier_result_rewrite = esbmc_verifier_with_k_induction(new_content,idx=raw_idx,  property=kwargs.get("property", "unreach-call"))
+                    esbmc_verifier_result_rewrite = esbmc_verifier_with_k_induction(new_content,idx=one_idx,  property=kwargs.get("property", "unreach-call"))
                     status = esbmc_verifier_result_rewrite["status"] if esbmc_verifier_result_rewrite is not None else 2
                 else:
                     status = Result.Unknown.value

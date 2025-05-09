@@ -422,46 +422,57 @@ def reward_asserty_verify(completions, **kwargs):
     return completion_contents
 
 
+from enum import Enum
+class Result(Enum):
+    Verified = 1
+    Falsified = 2
+    Unknown = 3
+    Timeout = 4
 
 def reward_asserty_verify_with_esbmc(completions, **kwargs):
     assert "source_code" in kwargs
     assert "idx" in kwargs, list(kwargs)
 
-    def rewrite_content(source_code, assertion, idx):
+    def rewrite_content(assertion, source_code, idx):
         if "assert" not in assertion.lower():
-            return {"new_code": None}
+            return {"new_code": None, **data}
 
         data = {'source_code': source_code, "idx": idx}
         ret = request_auto(payload=data, target_path="rewrite")
         if ret is None:
-            return {"new_code": None}
+            return {"new_code": None,**data}
         new_code = ret.get("new_code", None)
 
         if new_code is None:
-            return {"new_code": None}
+            return {"new_code": None,**data}
 
         data = {'source_code': new_code, "assertation": "\n" + assertion + "\n"}
         inserted_code = request_auto(payload=data, target_path="p_insert_invariant_from_clangindex")
         if inserted_code is None:
-            return {"new_code": None}
+            return {"new_code": None,**data}
         inserted_code = inserted_code.get("p_insert_invariant_from_clangindex", None)
 
         if inserted_code is None:
-            return {"new_code": None}
+            return {"new_code": None,**data}
 
-        return {"new_code": inserted_code}
+        return {"new_code": inserted_code,**data}
 
-    def esbmc_verifier_with_k_induction(source_code, property="unreach-call", timeout=5):
+    def esbmc_verifier_with_k_induction(source_code,idx, property="unreach-call", timeout=20):
         assert property in ["unreach-call", "termination"]
-        data = {'source_code': source_code, "timeout": timeout}
+        data = {'source_code': source_code, "timeout": timeout, "idx":idx,"skip_local":False }
         return request_auto(payload=data, target_path="esbmc_verifier_with_k_induction", timeout=timeout)
 
-    # assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
-    assert_snippets = [extract_asserts(completion[-1]["content"]) for completion in completions]
-    raw_source_code = kwargs["source_code"]
-    raw_idx = kwargs["idx"]
+    assert_snippets = [find_code_blocks(completion[-1]["content"]) for completion in completions]
+    # assert_snippets = [completion for completion in completions if type(completion)==str ]
 
-    new_completions = list(zip(raw_source_code, assert_snippets, raw_idx))
+    raw_source_code = kwargs["source_code"]
+    assert type(raw_source_code)!=str , raw_source_code
+    
+    raw_idx = kwargs["idx"]
+    assert type(raw_idx)!=str , raw_idx 
+
+    new_completions = list(zip( assert_snippets,  raw_source_code ,  raw_idx  ) )
+    assert len(new_completions) == len(assert_snippets), (assert_snippets,new_completions )
 
     completion_contents = []
 
@@ -470,20 +481,29 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
         rewrite_results = executor.map(lambda x: rewrite_content(x[0], x[1], x[2]), new_completions)
 
         for rewrite_result in rewrite_results:
-            new_content = rewrite_result.get('new_code', None)
-
-            if new_content is not None:
-                esbmc_verifier_result_rewrite = esbmc_verifier_with_k_induction(new_content, property=kwargs.get("property", "unreach-call"))
-                status = esbmc_verifier_result_rewrite["status"] if esbmc_verifier_result_rewrite is not None else 2
-            else:
-                status = 2
-
-            if status == 1:
-                flg = 1
-            else:
-                flg = 0
-
-            completion_contents.append(float(flg))
+            score=  Result.Unknown.value
+            if rewrite_result is not None :
+                new_content = rewrite_result.get('new_code', None)
+                # one_idx  = rewrite_result.get('idx', None)
+    
+                esbmc_verifier_result_rewrite=  {} 
+                if new_content is not None:
+                    esbmc_verifier_result_rewrite = esbmc_verifier_with_k_induction(new_content,idx=raw_idx,  property=kwargs.get("property", "unreach-call"))
+                    status = esbmc_verifier_result_rewrite["status"] if esbmc_verifier_result_rewrite is not None else 2
+                else:
+                    status = Result.Unknown.value
+    
+                
+                if status == Result.Verified.value:
+                    score = 1
+                elif status == Result.Falsified.value:
+                    score = -1
+                elif status == Result.Unknown.value:
+                    score = 0
+                elif status == Result.Timeout.value:
+                    score = 0.15
+                
+            completion_contents.append(float(score) )
 
     return completion_contents
 

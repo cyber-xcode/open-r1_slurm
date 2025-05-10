@@ -4,8 +4,8 @@ import math
 import re
 from typing import Dict
 
-from latex2sympy2_extended import NormalizationConfig
-from math_verify import LatexExtractionConfig, parse, verify
+# from latex2sympy2_extended import NormalizationConfig
+# from math_verify import LatexExtractionConfig, parse, verify
 from typing import Callable, Dict
 
 from .utils import is_e2b_available
@@ -479,18 +479,18 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
     assert_snippets = [find_code_blocks(c[-1]["content"]) for c in completions]
 
     # Normalize source_code and idx
-    raw_sources = list(set(kwargs["source_code"]))
-    assert len(raw_sources) == 1, raw_sources
-    raw_idxs = list(set(kwargs["idx"]))
-    assert len(raw_idxs) == 1, raw_idxs
-    source_code = raw_sources[0]
-    idx = raw_idxs[0]
+    raw_sources = kwargs["source_code"]
+    assert len(raw_sources) == len(assert_snippets), (raw_sources,assert_snippets)
+
+    raw_idxs = kwargs["idx"]
+    assert len(raw_idxs) == len(assert_snippets), (raw_idxs,assert_snippets)
+    
 
     # Prepare tasks
     tasks = [(snippet, source_code, idx,
               kwargs.get("property", "unreach-call"),
               kwargs.get("timeout", 20))
-             for snippet in assert_snippets]
+             for snippet,source_code,idx in zip(assert_snippets,raw_sources,raw_idxs)]
 
     # Execute in parallel
     with ThreadPoolExecutor() as executor:

@@ -7,8 +7,8 @@ import re
 from functools import partial, update_wrapper
 from typing import Callable, Dict
 
-from latex2sympy2_extended import NormalizationConfig
-from math_verify import LatexExtractionConfig, parse, verify
+# from latex2sympy2_extended import NormalizationConfig
+# from math_verify import LatexExtractionConfig, parse, verify
 
 from .utils import is_e2b_available
 from .utils.ioi import SubtaskResult, add_includes, get_piston_client_from_env, score_subtask

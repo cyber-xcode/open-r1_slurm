@@ -76,15 +76,18 @@ if "jian" in hostname:
         "http://127.0.0.1:5000",
     ]
 else:
-    BASE_URL = "http://10.0.104.167:60002/5000/"
+#    BASE_URL = "http://10.0.104.167:60002/5000/"
+#    BASE_URLS = [
+#        "http://10.0.104.167:60002/5000/",
+#        "http://10.0.104.97:60002/5000/",
+#    ]
+    BASE_URL = "http://146.190.90.3:9638"
     BASE_URLS = [
-        "http://10.0.104.167:60002/5000/",
-        "http://10.0.104.97:60002/5000/",
+            "http://146.190.90.3:9638",
     ]
 
-
 print ("hostname", hostname,"BASE_URL", BASE_URL, BASE_URLS )
-def request_auto(payload, target_path="", timeout=10):
+def request_auto(payload, target_path="", timeout=60):
     # Randomly select a base URL
     base_url = random.choice(BASE_URLS)
     
@@ -489,7 +492,7 @@ def reward_asserty_verify_with_esbmc(completions, **kwargs):
     # Prepare tasks
     tasks = [(snippet, source_code, idx,
               kwargs.get("property", "unreach-call"),
-              kwargs.get("timeout", 20))
+              kwargs.get("timeout", 60))
              for snippet,source_code,idx in zip(assert_snippets,raw_sources,raw_idxs)]
 
     # Execute in parallel

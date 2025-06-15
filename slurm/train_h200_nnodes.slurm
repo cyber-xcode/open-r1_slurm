@@ -78,6 +78,8 @@ fi
 
 source  "$HOME/envs/${hostname}_openr1"/bin/activate && uv pip install --upgrade pip
 
+uv pip install wandb
+wandb offline 
 
 
 
@@ -123,7 +125,7 @@ SRUN_ARGS=" \
     --wait=60 \
     --kill-on-bad-exit=1 \
     "
-clear; srun $SRUN_ARGS --jobid $SLURM_JOB_ID bash -c "bash r_gpu1b.sh" 2>&1
+clear; srun $SRUN_ARGS --jobid $SLURM_JOB_ID bash -c "bash r_gpu2c.sh" 2>&1
 
 echo "END TIME: $(date)"
 

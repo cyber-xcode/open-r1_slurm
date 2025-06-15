@@ -16,6 +16,9 @@ def split_jsonl_file(input_file, output_file_1, output_file_2):
             if "test" in data["idx"]:
                 continue
             idx = int(data['idx'].split('.')[0])  # Assuming 'idx' is like "123.c"
+
+            del data["problem"]
+            data["token_size"] = -1
             
             # Split the data based on the 'idx' value
             if 0 <= idx <= 133:

@@ -16,6 +16,8 @@ import logging
 import os
 import sys
 
+os.environ["WANDB_DISABLED"] = "0"
+
 import datasets
 import torch
 import transformers

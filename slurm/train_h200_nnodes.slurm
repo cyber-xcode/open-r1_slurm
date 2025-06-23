@@ -10,7 +10,6 @@
 #SBATCH --cpus-per-task=120         # CPUs per task (for data loading)
 #SBATCH --output=./logs/%x_%j.out
 #SBATCH --error=./logs/%x_%j.err
-#SBATCH --gres-flags=enforce-binding
 
 #srun   --account=xiaofeiresearch --partition=researchshort   --qos=jwangqos-20250431  --pty --mem=400G --cpus-per-task=120 --gres=gpu:4         --constraint=h200  enroot start  cuda_container_root  sh -c "sleep infinity" 
 # Load modules

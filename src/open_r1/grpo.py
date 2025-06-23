@@ -334,6 +334,10 @@ def main(script_args, training_args, model_args):
 
 if __name__ == "__main__":
     parser = TrlParser((GRPOScriptArguments, GRPOConfig, ModelConfig))
-    script_args, training_args, model_args = parser.parse_args_and_config()
+    try:
+        script_args, training_args, model_args = parser.parse_args_and_config( fail_with_unknown_args = False )
+    except TypeError :
+        script_args, training_args, model_args = parser.parse_args_and_config( )
+
     print (script_args)
     main(script_args, training_args, model_args)

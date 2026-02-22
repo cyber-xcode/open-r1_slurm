@@ -1,0 +1,49 @@
+# Model arguments
+model_name_or_path: Qwen/Qwen2.5-1.5B-Instruct
+model_revision: main
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+
+# Data training arguments
+dataset_name: data_dir/score_dir_decontained_noreason/sft_gptoss_fse_24k_decontain_c24ks1_nonreason.jsonl
+dataset_num_proc: 48
+system_prompt: "You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>"
+
+
+# SFT trainer config
+bf16: true
+do_eval: false
+eval_strategy: 'no'
+gradient_accumulation_steps: 1
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+hub_model_id: Qwen2.5-1.5B-Open-R1-sft_train_full_24k_dc38a75a4c94f2002004ac9c217d4396
+hub_strategy: every_save
+learning_rate: 5.0e-05
+log_level: info
+logging_steps: 5
+logging_strategy: steps
+lr_scheduler_type: cosine_with_min_lr
+lr_scheduler_kwargs:
+  min_lr_rate: 0.1
+packing: true
+max_length: 4096
+max_steps: -1
+num_train_epochs: 16
+output_dir: save_dir_sft/sft_gptoss_fse_24k_decontain_c24ks1_nonreason_llama31b1_diffllm
+
+overwrite_output_dir: false
+per_device_eval_batch_size: 16
+per_device_train_batch_size: 16
+push_to_hub: false
+report_to:
+- tensorboard
+save_strategy: "no"
+save_steps: 500
+save_total_limit: 1
+save_only_model: true
+seed: 40
+use_liger_kernel: true
+warmup_ratio: 0.05
+

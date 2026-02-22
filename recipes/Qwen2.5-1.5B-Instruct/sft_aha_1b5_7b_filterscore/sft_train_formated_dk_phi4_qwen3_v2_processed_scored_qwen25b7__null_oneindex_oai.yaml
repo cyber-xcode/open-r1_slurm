@@ -32,7 +32,7 @@ max_length: 4096
 max_steps: -1
 num_train_epochs: 36
 output_dir: save_ahacorrect_4096_dir/sft_train_formated_dk_phi4_qwen3_v2_processed_scored_qwen25b7__null_oneindex_oai
-overwrite_output_dir: true
+overwrite_output_dir: false
 per_device_eval_batch_size: 16
 per_device_train_batch_size: 16
 push_to_hub: false

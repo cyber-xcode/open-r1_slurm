@@ -8,8 +8,8 @@ from typing import Dict
 # from math_verify import LatexExtractionConfig, parse, verify
 from typing import Callable, Dict
 
-from .utils import is_e2b_available
-from .utils import wired_text_detect 
+#from .utils import is_e2b_available
+#from .utils import wired_text_detect 
 
 import random
 
@@ -35,11 +35,11 @@ logger = logging.getLogger(__file__)
 
 
 
-if is_e2b_available():
-    from dotenv import load_dotenv
-    from e2b_code_interpreter import Sandbox
-
-    load_dotenv()
+#if is_e2b_available():
+#    from dotenv import load_dotenv
+#    from e2b_code_interpreter import Sandbox
+#
+#    load_dotenv()
 
 
 def find_code_blocks(completion: str) -> str:
@@ -70,21 +70,14 @@ def find_code_blocks(completion: str) -> str:
 
 hostname = socket.gethostname()
 
-if "jian" in hostname:
-    BASE_URL =     "http://127.0.0.1:5000"
-    BASE_URLS = [
-        "http://127.0.0.1:5000",
-    ]
-else:
-#    BASE_URL = "http://10.0.104.167:60002/5000/"
-#    BASE_URLS = [
-#        "http://10.0.104.167:60002/5000/",
-#        "http://10.0.104.97:60002/5000/",
-#    ]
-    BASE_URL = "http://146.190.90.3:9638"
-    BASE_URLS = [
-            "http://146.190.90.3:9638",
-    ]
+BASE_URL = "http://143.198.205.199:9639"
+BASE_URLS = ["http://143.198.205.199:9639"]
+
+
+BASE_URL = "http://157.10.162.245:443"
+BASE_URLS = ["http://157.10.162.245:443"]
+
+
 
 print ("hostname", hostname,"BASE_URL", BASE_URL, BASE_URLS )
 def request_auto(payload, target_path="", timeout=60):

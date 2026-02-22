@@ -24,21 +24,30 @@ Loop invariant generation is a fundamental challenge in formal program reasoning
 
 This project adapts the Open R1 methodology to loop invariants, providing a unified training pipeline that integrates supervised fine-tuning (SFT) and reinforcement learning from formal feedback (RL).
 
+Here is the updated **Plan of Attack** section with the architectural diagram included to clearly illustrate the 3-step Loop-R1 pipeline.
+
+---
+
 ### Plan of Attack
 
-We map the core R1 pipeline to the formal verification domain:
+We map the core R1 pipeline to the formal verification domain to intrinsically enhance the semantic reasoning of large language models:
 
 * 
 **Step 1: Distilled Reasoning Data (SFT):** We synthesized 172,000 high-quality C/C++ loop programs, annotated them with verified invariants, and used strong LLMs to distill step-by-step reasoning traces. We fine-tune base models on a curated dataset of 28,420 `<program, invariant, reasoning>` triples.
 
 
 * 
-**Step 2: RL with Verifiable Rewards (GRPO):** We replace standard RLHF with objective, automated formal feedback. Models are optimized using Satisfiability Modulo Theories (SMT) solvers and Bounded Model Checking (BMC) to ensure semantic correctness.
+**Step 2: RL with Verifiable Rewards (GRPO):** We replace standard RLHF with objective, automated formal feedback. Models are optimized using Satisfiability Modulo Theories (SMT) solvers and Bounded Model Checking (BMC) to ensure semantic correctness during invariant exploration.
 
 
 * 
-**Step 3: Joint Optimization (SFT + RL):** We combine trace-level supervision with outcome-driven exploration. The model is initialized with reasoning-aware SFT and subsequently refined through exploration-driven reinforcement learning, achieving robust generalization.
+**Step 3: Joint Optimization (SFT + RL):** We combine trace-level supervision with outcome-driven exploration. The model is initialized with reasoning-aware SFT and subsequently refined through exploration-driven reinforcement learning, achieving robust generalization and semantic correctness.
 
+
+
+<center>
+<img src="assets/plan-of-attack.png" alt="Loop-R1 Training Pipeline" width="600">
+</center>
 
 
 ---
@@ -246,6 +255,24 @@ If you find this project useful in your own work, please consider citing as foll
 ```
 
 
+---
+
+## Acknowledgements
+
+This project is built upon and inspired by the excellent work of the Hugging Face team on [Open R1](https://github.com/huggingface/open-r1). We extend our gratitude to them for providing a fully open reproduction of the DeepSeek-R1 pipeline, which served as the foundational framework for our adaptations in formal program reasoning and loop invariant synthesis.
+
+If you build upon this pipeline, please consider acknowledging their work:
+
+```bibtex
+@misc{openr1,
+    title = {Open R1: A fully open reproduction of DeepSeek-R1},
+    url = {https://github.com/huggingface/open-r1},
+    author = {{Hugging Face}},
+    month = {January},
+    year = {2025}
+}
+
+```
 
 
 
